@@ -7,7 +7,7 @@ import math
 import time
 import random
 
-DEFAULT_KINECT_ID = 0
+DEFAULT_KINECT_ID = 1
 
 class KinectDetector(object):
 
@@ -110,12 +110,11 @@ class KinectDetector(object):
 
     def get_visual_target(self):
         # pick one target at random
-        kps = self.detect_keypoints()
+        kps = self.detect_keypoints(use_arm_coord=True)
         i = random.randint(0, len(kps) - 1)
-        return self.to_arm_coord(kps[i])
+        return kps[i]["position"]
 
     def to_arm_coord(self, point):
-        # pick one target at random
         kp = np.append(point[:3], [1])
         return (kp@self.k4a2arm_mat)[0:3]
 
@@ -146,9 +145,8 @@ class KinectDetector(object):
 
             keypoints = self.detector.detect(img)
             for kp in keypoints:
-                # coordinates are somehow flipped between depth image and keypoints
-                (x,y) = (int(kp.pt[1]), int(kp.pt[0]))
-                if np.any(depth_img[x - 3: x + 4, y - 3: y + 4] > 0):
+                (x,y) = (int(kp.pt[0]), int(kp.pt[1]))
+                if np.any(depth_img[y - 3: y + 4, x - 3: x + 4] > 0):
                     found = found + 1
 
             if found == 0:
@@ -163,52 +161,71 @@ class KinectDetector(object):
         # cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS ensures the size of the circle corresponds to the size of blob
         im_with_keypoints = cv2.drawKeypoints(self.last_processed_depth_image, keypoints, np.array([]), (0, 0, 255),
                                               cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-        cv2.imshow("Keypoints", im_with_keypoints)
-        cv2.imshow("workspace", self.last_raw_color_image)
-        cv2.imshow("rgb crop", self.get_last_image())
-        cv2.waitKey(1)
-
+      
         pts = {}
         i = 0
         for kp in keypoints:
-            obj = np.zeros(8)
+            obj = {}
             (x, y) = (int(kp.pt[0]), int(kp.pt[1]))
             region = depth_img[y - 3: y + 4, x - 3: x + 4]
             if not np.any(region > 0):
                 continue
             depth = np.sum(region) / np.count_nonzero(region)
-            obj[:3] = np.array(self.transform.pixel_2d_to_point_3d(
-                (kp.pt[1], kp.pt[0]),
+            obj["rgb_pos_3d"] = np.array(self.transform.pixel_2d_to_point_3d(
+                (x, y),
+                depth,
+                k4a.ECalibrationType.DEPTH,
+                k4a.ECalibrationType.COLOR)) / 1000 # in meters
+
+            depth_pos_3d = np.array(self.transform.pixel_2d_to_point_3d(
+                (x, y),
                 depth,
                 k4a.ECalibrationType.DEPTH,
                 k4a.ECalibrationType.DEPTH)) / 1000 # in meters
-            if use_arm_coord:
-                obj[:3] = self.to_arm_coord(obj[:3])
-            obj[3] = kp.pt[0] - self.mask_bounding_box[1].start # x in image / mask space
-            obj[4] = kp.pt[1] - self.mask_bounding_box[0].start # y in image / mask space
-            obj[5] = depth
-            rgb_coords = self.transform.pixel_2d_to_pixel_2d(
-                (kp.pt[0], kp.pt[1]),
+            obj["depth_pos_3d"] = depth_pos_3d
+
+            TODO: fix the bug in arm coordinate mapping (calibration.py)
+            obj["position"] = self.to_arm_coord(depth_pos_3d) if use_arm_coord else depth_pos_3d
+            obj["depth_pos_2d"] = np.array([
+                x, # x in image 
+                y, # y in image 
+                depth])
+            # obj["mask_pos_2d"] =[
+            #     kp.pt[0] - self.mask_bounding_box[1].start, # x in image / mask space
+            #     kp.pt[1] - self.mask_bounding_box[0].start, # y in image / mask space
+            #     depth]
+            rgb_coords = np.array(self.transform.pixel_2d_to_pixel_2d(
+                (x, y),
                 depth,
-                k4a.ECalibrationType.COLOR,
-                k4a.ECalibrationType.COLOR)
-            obj[6] = rgb_coords[0] - self.rgb_mask_bounding_box[1].start # x in image / mask space
-            obj[7] = rgb_coords[1] - self.rgb_mask_bounding_box[0].start # y in image / mask space
+                k4a.ECalibrationType.DEPTH,
+                k4a.ECalibrationType.COLOR))
+            rgb_x = int(rgb_coords[0] + 0.5)
+            rgb_y = int(rgb_coords[1] + 0.5)
+            obj["rgb_pos_2d"] = np.array([rgb_x, rgb_y, depth])
+            obj["mask_pos_2d"] = np.array([
+                rgb_x - self.rgb_mask_bounding_box[1].start, # x in image 
+                rgb_y - self.rgb_mask_bounding_box[0].start, # y in image 
+                depth])
+            #self.last_raw_color_image = cv2.circle(self.last_raw_color_image, (rgb_x, rgb_y), int(kp.size/2) + 1, (0, 0, 255), 1)
             pts[i] = obj
             i = i + 1
 
+        cv2.imshow("workspace", self.last_raw_color_image)
+        cv2.imshow("rgb crop", self.get_last_image())
+        cv2.imshow("Keypoints", im_with_keypoints)
+        cv2.waitKey(1)
         return pts
 
     def get_last_image(self, crop_to_mask=True):
         return self.last_raw_color_image[self.rgb_mask_bounding_box] if crop_to_mask else self.last_raw_color_image
 
 def debug():
-    eye = KinectDetector(id=1)
+    eye = KinectDetector()
     while True:
         eye.detect_keypoints()
 
 def display_depth():
-    cam = k4a.Device.open(DEFAULT_KINECT_ID)
+    cam = k4a.Device.open()
     config = k4a.DeviceConfiguration(color_format=k4a.EImageFormat.COLOR_BGRA32, depth_mode=k4a.EDepthMode.NFOV_UNBINNED)
     cam.start_cameras(config)
     while True:
