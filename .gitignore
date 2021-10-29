@@ -352,3 +352,5 @@ mmky.egg-info/*
 # data files
 *.hdf5
 *.npy
+*.pth
+
