@@ -58,6 +58,9 @@ class gamepad_or_keyboard():
     def __init__(self, gamepad_id=0):
         self.gamepad_id = gamepad_id
         self.gps = None
+        self.refresh()
+        if not self.gps:
+            print("No GamePad controller found. Keyboard input is enabled and active even when the app does not have input focus.")
 
     def normalize_thumb_value(self, v):
         # eliminate deadzone and normalize
@@ -113,17 +116,20 @@ if __name__ == '__main__':
     done = False
     print('*****************************************.')
     print(
-        'Thumbsticks: primary way to move the arm (EEF position control in cylindrical coordinates).\n'
+        'Right thumbstick: move the arm up and down (EEF z axis).\n'
+        'Right thumbstick press: force limit override.\n'
+        'Left thumbstick:  move the arm in the xy plane, in user-defined coordinate system.\n'
+        'Left thumbstick press: set user-defined xy coordinate system rotation.\n'
+        'D-Pad: move the arm in the xy plane, in robot coordinate system.\n'
         'Thumbsticks + right shoulder button: primary way to rotate the gripper (joint control).\n'
-        'D-Pad: alternate way to move the arm (x-y position control in cartesian coordinates).\n'
         'Thumbsticks + left shoulder button: alternate way to rotate gripper (EEF position control, roll/pitch/yaw).\n'
-        'Thumbstick press: force limit override.\n'
         'Triggers: open/close gripper.\n'
         'A: start recording.\n'
         'B: stop recording.\n'
-        'X: swap x/y axes on D-Pad.\n'
+        'X: swap point of view (1st vs 3rd).\n'
         'Y: change the grasp mode (pinch vs basic).\n'
         'Menu button: move to home position.\n'
+        'Back button: toggle left thumbstick operation between cartesian coordinates and cylindrical coordinates. '
         'Esc: exit.'
     )
 
@@ -152,7 +158,7 @@ if __name__ == '__main__':
             move(home, force_limit_default)
         elif gk.button_pressed(BTN_SHOULDER_RIGHT):
             # wrist control in joint positions. Direction is optimized for the gripper-down position
-            
+
             wrist1 = -gk.l_thumb_y()
             wrist2 = -gk.l_thumb_x()
             wrist3 = gk.r_thumb_x()
@@ -180,7 +186,7 @@ if __name__ == '__main__':
             if third_person_pov:
                 dy = -dy
                 dx = -dx
-            
+
             dz = pose_gain * -gk.r_thumb_y()
             target = robot.arm.state.tool_pose() + [dx, dy, dz, 0, 0, 0]
             move(target, force_limit_default)
@@ -199,7 +205,7 @@ if __name__ == '__main__':
             (x, y, z, roll, pitch, yaw) = robot.arm.state.tool_pose().to_xyzrpy()
             d = math.sqrt(x*x + y*y)
             a = math.atan2(y, x)
-            
+
             if cylindrical:
                 da = joint_gain * -lx
                 dd = pose_gain * ly
