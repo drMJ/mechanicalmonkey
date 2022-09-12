@@ -119,7 +119,8 @@ if __name__ == '__main__':
         'Right thumbstick: move the arm up and down (EEF z axis).\n'
         'Right thumbstick press: force limit override.\n'
         'Left thumbstick:  move the arm in the xy plane, in user-defined coordinate system.\n'
-        'Left thumbstick press: set user-defined xy coordinate system rotation.\n'
+        'Left thumbstick press: toggle left thumbstick operation between cartesian coordinates and cylindrical coordinates. '
+        'Back button: set user-defined xy coordinate system rotation.\n'
         'D-Pad: move the arm in the xy plane, in robot coordinate system.\n'
         'Thumbsticks + right shoulder button: primary way to rotate the gripper (joint control).\n'
         'Thumbsticks + left shoulder button: alternate way to rotate gripper (EEF position control, roll/pitch/yaw).\n'
@@ -129,7 +130,6 @@ if __name__ == '__main__':
         'X: swap point of view (1st vs 3rd).\n'
         'Y: change the grasp mode (pinch vs basic).\n'
         'Menu button: move to home position.\n'
-        'Back button: toggle left thumbstick operation between cartesian coordinates and cylindrical coordinates. '
         'Esc: exit.'
     )
 
@@ -150,8 +150,8 @@ if __name__ == '__main__':
         t0 = time.time()
         gk.refresh()
         third_person_pov = gk.button_toggled(BTN_X, third_person_pov)
-        cylindrical = gk.button_toggled(BTN_BACK, cylindrical)
-        if gk.button_pressed(THUMB_STICK_PRESS_LEFT):
+        cylindrical = gk.button_toggled(THUMB_STICK_PRESS_LEFT, cylindrical)
+        if gk.button_pressed(BTN_BACK):
             xy_reference_angle = robot.arm.state.joint_positions()[Joints.BASE]
         f_range = force_limit_override_range if gk.button_pressed(THUMB_STICK_PRESS_RIGHT) else force_limit_range
         if gk.button_pressed(BTN_MENU):
