@@ -4,3 +4,4 @@ from ._bindings.capture import Capture
 from ._bindings.image import Image
 from ._bindings.calibration import Calibration
 from ._bindings.transformation import Transformation
+from .camera import Camera
