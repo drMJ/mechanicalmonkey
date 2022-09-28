@@ -1,1 +1,1 @@
-from .realsense import Camera
+from .camera import Camera
