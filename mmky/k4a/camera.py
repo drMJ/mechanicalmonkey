@@ -42,8 +42,7 @@ class Camera:
         self.transformed_depth = Image.create(EImageFormat.DEPTH16, resolution[0], resolution[1], resolution[0]*2)
         self.crop = kwargs.get("crop", (0, 0, resolution[0], resolution[1]))
 
-    def get_image(self, color_buffer, depth_buffer, min_timestamp=0):
-        #assert depth_buffer is None or color_buffer.shape[:2] == depth_buffer.shape
+    def get_image(self, color_buffer=None, depth_buffer=None, min_timestamp=0):
         capture = self._device.get_capture(0)
         while capture:
             del self.capture
@@ -55,15 +54,21 @@ class Camera:
             return None
         
         # project depth into color camera
-        if depth_buffer is not None and self.capture.depth:
+        if self.capture.depth:
             k4a_transformation_depth_image_to_color_camera(self.transform, self.capture.depth._image_handle, self.transformed_depth._image_handle)
 
         # crop and resize color image and transformed_depth
-        cv2.resize(self.capture.color.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]], (color_buffer.shape[:2][::-1]), dst=color_buffer, interpolation=cv2.INTER_AREA)
-        if depth_buffer is not None and self.capture.depth:
-            cv2.resize(self.transformed_depth.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]], depth_buffer.shape[::-1], dst=depth_buffer, interpolation=cv2.INTER_NEAREST)
+        if color_buffer is not None:
+            cv2.resize(self.capture.color.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]], (color_buffer.shape[:2][::-1]), dst=color_buffer, interpolation=cv2.INTER_AREA)
+        else:
+            color_buffer = self.capture.color.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]]
+        if self.capture.depth:
+            if depth_buffer is not None:
+                cv2.resize(self.transformed_depth.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]], depth_buffer.shape[::-1], dst=depth_buffer, interpolation=cv2.INTER_NEAREST)
+            else:
+                depth_buffer = self.transformed_depth.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]]
 
-        return timestamp
+        return (color_buffer, depth_buffer, timestamp)
 
     def start(self):
         self._device.start_cameras(self.cfg)

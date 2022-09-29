@@ -7,7 +7,7 @@ import time
 
 parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, description="Display camera stream.")
 parser.add_argument("-d", "--device_id", type=int, default=0, help="The device id of the camera to display.")
-parser.add_argument("-t", "--type", type=str, default='realsense', help="The device type, k4a or realsense.")
+parser.add_argument("-t", "--type", type=str, default='k4a', help="The device type, k4a or realsense.")
 
 args = parser.parse_args()
 
@@ -35,7 +35,7 @@ ots = 0
 font = cv2.FONT_HERSHEY_SIMPLEX
 while cv2.waitKey(1) < 0:
     start = time.perf_counter()
-    ts = camera.get_image(color_buf, depth_buf)
+    (_, _, ts) = camera.get_image(color_buf, depth_buf)
     t = time.perf_counter() - start
     if ots < ts:
         fps = int(1000/(ts-ots))
