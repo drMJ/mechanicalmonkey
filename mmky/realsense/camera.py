@@ -16,6 +16,7 @@ class Camera:
         if len(match) == 0:
             raise Exception(f"A RealSense device with serial number = {device_id} could not be found.")
         device = match[0]
+        self.needs_alignment = device.get_info(rs.camera_info.name) != 'Intel RealSense D405' # 405 uses the same camera for depth and rgb, no need to align 
         self.cfg.enable_device(device_id)
         color_resolution = kwargs.get("color_resolution", (1280, 720))
         depth_resolution = kwargs.get("depth_resolution", color_resolution)
@@ -50,11 +51,14 @@ class Camera:
         if ts < min_timestamp:
             return None
         
-        # project depth into color camera
+        # project depth into color camera if needed
         if depth_buffer is not None:
-            aligned_frames = self.transform.process(capture)
-            depth_frame = aligned_frames.get_depth_frame() 
-            color_frame = aligned_frames.get_color_frame()
+            if self.needs_alignment:
+                aligned_frames = self.transform.process(capture)
+                depth_frame = aligned_frames.get_depth_frame() 
+                color_frame = aligned_frames.get_color_frame()
+            else:
+                depth_frame = capture.get_depth_frame()
 
         # crop and resize color image and transformed_depth
         cv2.resize(np.asanyarray(color_frame.get_data())[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]], color_buffer.shape[:2][::-1], dst=color_buffer)

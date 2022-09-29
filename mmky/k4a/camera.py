@@ -50,7 +50,8 @@ class Camera:
             self.capture = capture
             capture = self._device.get_capture(0)
 
-        if self.capture.depth.system_timestamp_nsec < min_timestamp:
+        timestamp = self.capture.color.system_timestamp_nsec / 1000000
+        if timestamp < min_timestamp:
             return None
         
         # project depth into color camera
@@ -58,11 +59,11 @@ class Camera:
             k4a_transformation_depth_image_to_color_camera(self.transform, self.capture.depth._image_handle, self.transformed_depth._image_handle)
 
         # crop and resize color image and transformed_depth
-        cv2.resize(self.capture.color.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]], (color_buffer.shape[:2][::-1]), dst=color_buffer, interpolation=cv2.INTER_AREA))
+        cv2.resize(self.capture.color.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]], (color_buffer.shape[:2][::-1]), dst=color_buffer, interpolation=cv2.INTER_AREA)
         if depth_buffer is not None and self.capture.depth:
             cv2.resize(self.transformed_depth.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]], depth_buffer.shape[::-1], dst=depth_buffer, interpolation=cv2.INTER_NEAREST)
 
-        return self.capture.depth.system_timestamp_nsec
+        return timestamp
 
     def start(self):
         self._device.start_cameras(self.cfg)

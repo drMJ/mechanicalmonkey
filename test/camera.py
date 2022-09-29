@@ -38,7 +38,7 @@ while cv2.waitKey(1) < 0:
     ts = camera.get_image(color_buf, depth_buf)
     t = time.perf_counter() - start
     if ots < ts:
-        fps = int(1000000000/(ts-ots))
+        fps = int(1000/(ts-ots))
         ots = ts
     
     cv2.putText(color_buf,str(fps),(w-100, h-10), font, .3,(255,255,255),1,cv2.LINE_AA)
