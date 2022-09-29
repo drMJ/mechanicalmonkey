@@ -27,11 +27,13 @@ class Camera:
         exposure = kwargs.get("exposure", 0)
         
         if exposure:
-            sensors = device.query_sensors()
-            sensors[len(sensors)-1].set_option(rs.option.exposure, exposure)   
+            color_sensor = device.first_color_sensor()
+            color_sensor.set_option(rs.option.exposure, exposure)   
 
         depth_sensor = device.first_depth_sensor()
-        self.depth_scale = depth_sensor.get_depth_scale()
+        depth_scale = depth_sensor.get_depth_scale()
+        depth_sensor.set_option(rs.option.depth_units, 0.001) 
+        depth_scale = depth_sensor.get_depth_scale()
 
         self.crop = kwargs.get("crop", (0, 0, color_resolution[0], color_resolution[1]))
         self.pipeline = rs.pipeline()
