@@ -31,15 +31,16 @@ class Camera:
             subordinate_delay_off_master_usec = kwargs.get("subordinate_delay_off_master_usec", 0),
             disable_streaming_indicator = kwargs.get("disable_streaming_indicator", False)
         )
-        self._device = Device.open(kwargs.get("device_id", 0))
+        device_id = kwargs.get("device_id", 0)
+        self._device = Device.open(device_id)
         exposure = kwargs.get("exposure", 0)
         exposure_mode = EColorControlMode.MANUAL if exposure else EColorControlMode.AUTO
         self._device.set_color_control(EColorControlCommand.EXPOSURE_TIME_ABSOLUTE, exposure_mode, exposure)
 
         self.calibration = self._device.get_calibration(self.cfg.depth_mode, self.cfg.color_resolution)
-        self.transform  = k4a_transformation_create(self.calibration._calibration)
+        self._transform  = k4a_transformation_create(self.calibration._calibration)
         resolution = self.cfg.color_resolution if isinstance(self.cfg.color_resolution, tuple) else color_resolutions[self.cfg.color_resolution]
-        self.transformed_depth = Image.create(EImageFormat.DEPTH16, resolution[0], resolution[1], resolution[0]*2)
+        self._transformed_depth = Image.create(EImageFormat.DEPTH16, resolution[0], resolution[1], resolution[0]*2)
         self.crop = kwargs.get("crop", (0, 0, resolution[0], resolution[1]))
 
     def get_image(self, color_buffer=None, depth_buffer=None, min_timestamp=0):
@@ -55,20 +56,23 @@ class Camera:
         
         # project depth into color camera
         if self.capture.depth:
-            k4a_transformation_depth_image_to_color_camera(self.transform, self.capture.depth._image_handle, self.transformed_depth._image_handle)
+            k4a_transformation_depth_image_to_color_camera(self._transform, self.capture.depth._image_handle, self._transformed_depth._image_handle)
 
-        # crop and resize color image and transformed_depth
+        # crop and resize color image and _transformed_depth
         if color_buffer is not None:
             cv2.resize(self.capture.color.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]], (color_buffer.shape[:2][::-1]), dst=color_buffer, interpolation=cv2.INTER_AREA)
         else:
             color_buffer = self.capture.color.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]]
         if self.capture.depth:
             if depth_buffer is not None:
-                cv2.resize(self.transformed_depth.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]], depth_buffer.shape[::-1], dst=depth_buffer, interpolation=cv2.INTER_NEAREST)
+                cv2.resize(self._transformed_depth.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]], depth_buffer.shape[::-1], dst=depth_buffer, interpolation=cv2.INTER_NEAREST)
             else:
-                depth_buffer = self.transformed_depth.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]]
+                depth_buffer = self._transformed_depth.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]]
 
         return (color_buffer, depth_buffer, timestamp)
+
+    def get_3d_coordinates(self, x, y, depth):
+        return np.array(self._transform.pixel_2d_to_point_3d((x, y), depth, ECalibrationType.COLOR, ECalibrationType.COLOR)) / 1000 # in meters
 
     def start(self):
         self._device.start_cameras(self.cfg)

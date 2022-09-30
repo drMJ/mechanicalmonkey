@@ -5,7 +5,7 @@ import time
 import random
 import os
 from roman import connect, Robot, Tool, Joints, GraspMode
-from detector import KinectDetector
+from detector import Detector
 
 rootdir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 datadir = os.path.join(rootdir, "data/collector")
@@ -17,13 +17,14 @@ def move_lin_touch(target):
         robot.arm.touch(target)
     target[:] = robot.arm.state.tool_pose()
 
-def calibrate_camera(robot:Robot):
-    POSE_COUNT=10
+def calibrate_camera(robot:Robot, camera):
+    POSE_COUNT=100
     cam_poses = np.zeros((POSE_COUNT, 3))
     arm_poses = np.zeros((POSE_COUNT, 3))
 
-    neutral_pose = Tool(-0.41, -0.41, 0.2, 0, math.pi, 0)
-    target = Tool(-0.41, -0.41, 0.06, 0, math.pi, 0)
+    #neutral_pose = Tool(-0.41, -0.41, 0.2, 0, math.pi, 0)
+    neutral_pose = Joints(0, -math.pi/2, math.pi/2, -math.pi/2, -math.pi/2, 0)
+    out_position = Joints(-math.pi/2, -math.pi/2, math.pi/2, -math.pi/2, -math.pi/2, 0)
     backoff_delta = np.array([0,0,0.02,0,0,0])
 
     existing_sample_count = 0
@@ -35,17 +36,19 @@ def calibrate_camera(robot:Robot):
         arm_poses_file = open(arm_poses_file, 'a')
         arm_poses_file.write(',')
     
+    print(f"Tool pose: {robot.arm.state.tool_pose()}")
+    print(f"Joint position: {robot.arm.state.joint_positions()}")
     a = input("Ready? ")
 
     # move up to neutral
     robot.arm.move(neutral_pose, max_speed=1, max_acc=0.5)
     home_pose = robot.arm.state.joint_positions().clone()
-    out_position = robot.arm.state.joint_positions().clone()
-    out_position[Joints.BASE] = math.pi*9/10
+    target = robot.arm.state.tool_pose().clone()
+    target[Tool.Z] = -0.2
 
     # start the detector
     robot.arm.move(out_position, max_speed=1, max_acc=0.5)
-    eye = detector.create(detector.DEFAULT_KINECT_ID, None, reset_bkground=True)
+    eye = Detector(camera, cam2arm_file=None, reset_bkground=True)
     robot.arm.move(neutral_pose, max_speed=1, max_acc=0.5)
 
     # prep the hand
@@ -149,7 +152,7 @@ def calibrate_camera(robot:Robot):
     #    cp =  np.append(cam_poses[i, :], [1])
     #    print(w@cp)
 
-def compute_and_verify():
+def compute_and_verify(camera):
     
     cam_poses = np.fromfile(os.path.join(datadir, "cam_poses.csv"), sep=',')
     sample_count = len(cam_poses) // 3 
@@ -163,7 +166,7 @@ def compute_and_verify():
         w[i] = np.linalg.lstsq(cam_poses4, arm_poses[:,i], rcond=None)[0]
     w.tofile(os.path.join(datadir, "cam2arm.csv"), sep=',')
 
-    eye = detector.create(detector.DEFAULT_KINECT_ID)
+    eye = Detector(camera)
 
     maxxd = 0
     maxyd = 0
@@ -185,7 +188,7 @@ def compute_and_verify():
         time.sleep(2)
         print(eye.get_visual_target())
 
-def check_cam_arm_calibration(robot:Robot):
+def check_cam_arm_calibration(robot:Robot, camera):
     neutral_pose = Tool(-0.4, -0.4, 0.2, 0, math.pi, 0)
     target_pose = Tool.fromarray(neutral_pose)
     pick_pose = Tool.fromarray(neutral_pose)
@@ -198,7 +201,7 @@ def check_cam_arm_calibration(robot:Robot):
     out_position = Joints.fromarray(robot.arm.state.joint_positions())
     out_position[Joints.BASE] = math.pi*9/10
     robot.arm.move(out_position, max_speed=1, max_acc=0.5)
-    eye = KinectDetector()
+    eye = Detector(camera)
 
     while True:
         pose = eye.get_visual_target()
@@ -219,13 +222,17 @@ def check_cam_arm_calibration(robot:Robot):
 
 
 if __name__ == '__main__':
+    import mmky.k4a as k4a
     robot = connect(use_sim=False)
+    camera = k4a.Camera()
+    camera.start()
     try:
-        #calibrate_camera(robot)
-        #compute_and_verify()
+        calibrate_camera(robot, camera)
+        #compute_and_verify(camera)
         #detector.debug()
-        check_cam_arm_calibration(robot)
+        #check_cam_arm_calibration(robot, camera)
     except KeyboardInterrupt:
         pass
     robot.disconnect()
+    camera.stop()
 
