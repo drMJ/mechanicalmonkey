@@ -373,7 +373,7 @@ class Transformation:
 
         return target_point
 
-    def depth_image_to_color_camera(self, depth:Image)->Image:
+    def depth_image_to_color_camera(self, depth:Image, transformed_depth_image:Image=None)->Image:
         '''! Transforms the depth map into the geometry of the color camera.
 
         @param depth (Image): The depth image.
@@ -399,11 +399,12 @@ class Transformation:
         height_pixels = self._calibration.color_cam_cal.resolution_height
 
         # Create an output image.
-        transformed_depth_image = Image.create(
-            depth.image_format,
-            width_pixels,
-            height_pixels,
-            width_pixels * 2)
+        if transformed_depth_image is None:
+            transformed_depth_image = Image.create(
+                depth.image_format,
+                width_pixels,
+                height_pixels,
+                width_pixels * 2)
 
         status = k4a_transformation_depth_image_to_color_camera(
             self.__transform_handle,

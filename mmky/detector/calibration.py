@@ -8,7 +8,7 @@ from roman import connect, Robot, Tool, Joints, GraspMode
 from detector import Detector
 
 rootdir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-datadir = os.path.join(rootdir, "data/collector")
+datadir = os.path.join(rootdir, "mmky\\detector\\data")
 
 def move_lin_touch(target):
     robot.arm.touch(target)
@@ -18,12 +18,12 @@ def move_lin_touch(target):
     target[:] = robot.arm.state.tool_pose()
 
 def calibrate_camera(robot:Robot, camera):
-    POSE_COUNT=100
+    POSE_COUNT=10
     cam_poses = np.zeros((POSE_COUNT, 3))
     arm_poses = np.zeros((POSE_COUNT, 3))
 
     #neutral_pose = Tool(-0.41, -0.41, 0.2, 0, math.pi, 0)
-    neutral_pose = Joints(0, -math.pi/2, math.pi/2, -math.pi/2, -math.pi/2, 0)
+    start_pose = Joints(0, -math.pi/2, math.pi/2, -math.pi/2, -math.pi/2, 0)
     out_position = Joints(-math.pi/2, -math.pi/2, math.pi/2, -math.pi/2, -math.pi/2, 0)
     backoff_delta = np.array([0,0,0.02,0,0,0])
 
@@ -41,15 +41,16 @@ def calibrate_camera(robot:Robot, camera):
     a = input("Ready? ")
 
     # move up to neutral
-    robot.arm.move(neutral_pose, max_speed=1, max_acc=0.5)
+    robot.arm.move(start_pose, max_speed=1, max_acc=0.5)
     home_pose = robot.arm.state.joint_positions().clone()
+    neutral_pose = robot.arm.state.tool_pose().clone()
     target = robot.arm.state.tool_pose().clone()
-    target[Tool.Z] = -0.2
+    target[Tool.Z] = 0
 
-    # start the detector
+    # # start the detector
     robot.arm.move(out_position, max_speed=1, max_acc=0.5)
     eye = Detector(camera, cam2arm_file=None, reset_bkground=True)
-    robot.arm.move(neutral_pose, max_speed=1, max_acc=0.5)
+    robot.arm.move(home_pose, max_speed=1, max_acc=0.5)
 
     # prep the hand
     robot.hand.open()
@@ -57,14 +58,14 @@ def calibrate_camera(robot:Robot, camera):
     robot.hand.close()
         
     # move down until touching the table (move in small increments to simulate linear motion)
-    robot.arm.touch(target)
+    robot.arm.touch(target, max_speed=0.1, max_acc=0.1)
     if not robot.arm.state.is_goal_reached():
         move_lin_touch(target)
 
     table_z = robot.arm.state.tool_pose()[Tool.Z]
 
     # back off a bit
-    target += backoff_delta
+    target= robot.arm.state.tool_pose() + backoff_delta
     robot.arm.move(target, max_speed=1, max_acc=0.5, force_low_bound=None, force_high_bound=None)
     robot.hand.open()
     
@@ -79,7 +80,7 @@ def calibrate_camera(robot:Robot, camera):
     robot.hand.close(speed=1)
     robot.arm.move(neutral_pose, max_speed=1, max_acc=0.5)
     time.sleep(1)
-    move_lin_touch(target)
+    move_lin_touch(target) # put the object down
     time.sleep(0.5)
     robot.hand.open()
 
@@ -93,11 +94,11 @@ def calibrate_camera(robot:Robot, camera):
     print(f"Object height is {object_height}mm")
 
     # back up 
+    neutral_pose = robot.arm.state.tool_pose() + backoff_delta
     robot.arm.move(neutral_pose, max_speed=1, max_acc=0.5, force_low_bound=None, force_high_bound=None)
     
         
     # go through multiple poses in the same plane, roughly on the circle of radius 0.6
-    radius = -0.6
     pindex = 0
     while pindex <  POSE_COUNT:
         # move back and pick up the marker object
@@ -111,12 +112,12 @@ def calibrate_camera(robot:Robot, camera):
 
         # pick a new pose and release the marker object there
         # AREA
-        a = np.radians(random.randint(-0, 90))
-        dradius = radius + random.uniform(-0.15, 0.15)
+        a = np.radians(random.randint(-30, 30))
+        dradius = random.uniform(-0.4, -0.8)
         neutral_pose[0:2] = [dradius*np.cos(a), dradius*np.sin(a)]
-        robot.arm.move(neutral_pose, max_speed=1, max_acc=0.5)
+        target[:] = neutral_pose-backoff_delta
+        robot.arm.move(target, max_speed=1, max_acc=0.5)
         time.sleep(0.5)
-        target[:] = neutral_pose
         move_lin_touch(target)
         robot.hand.open()
         robot.arm.move(neutral_pose, max_speed=1, max_acc=0.5)
@@ -131,7 +132,7 @@ def calibrate_camera(robot:Robot, camera):
 
         # detect and save the marker object
         arm_poses[pindex][:] = top[:3]
-        kp = eye.detect_keypoints()[0]
+        kp = eye.detect_keypoints()[0]["pos_3d"]
         if not np.array_equal(kp, [0,0,0]):
             cam_poses[pindex] = kp
             print(f"{pindex}: {cam_poses[pindex]} -> {arm_poses[pindex]}")
@@ -142,7 +143,6 @@ def calibrate_camera(robot:Robot, camera):
     print("*****************")
     cam_poses.tofile(cam_poses_file, sep=',')
     arm_poses.tofile(arm_poses_file, sep=',')
-    eye.close()
     
     #print("Checking results:")
     #for i in range(OBJECT_COUNT*POSE_COUNT):
@@ -189,17 +189,19 @@ def compute_and_verify(camera):
         print(eye.get_visual_target())
 
 def check_cam_arm_calibration(robot:Robot, camera):
-    neutral_pose = Tool(-0.4, -0.4, 0.2, 0, math.pi, 0)
-    target_pose = Tool.fromarray(neutral_pose)
-    pick_pose = Tool.fromarray(neutral_pose)
+    start_pose = Joints(0, -math.pi/2, math.pi/2, -math.pi/2, -math.pi/2, 0)
+    out_position = Joints(-math.pi/2, -math.pi/2, math.pi/2, -math.pi/2, -math.pi/2, 0)
+    robot.arm.move(start_pose, max_speed=1, max_acc=0.5)
+
+    neutral_pose = robot.arm.state.tool_pose().clone()
+    target_pose = neutral_pose.clone()
+    pick_pose = neutral_pose.clone()
     robot.arm.move(neutral_pose, max_speed=1, max_acc=0.5)
     
     robot.hand.open()
     robot.hand.set_mode(GraspMode.PINCH)
     robot.hand.close()
 
-    out_position = Joints.fromarray(robot.arm.state.joint_positions())
-    out_position[Joints.BASE] = math.pi*9/10
     robot.arm.move(out_position, max_speed=1, max_acc=0.5)
     eye = Detector(camera)
 
@@ -224,13 +226,13 @@ def check_cam_arm_calibration(robot:Robot, camera):
 if __name__ == '__main__':
     import mmky.k4a as k4a
     robot = connect(use_sim=False)
-    camera = k4a.Camera()
+    camera = k4a.Camera(device_id=2)
     camera.start()
     try:
-        calibrate_camera(robot, camera)
+        #calibrate_camera(robot, camera)
         #compute_and_verify(camera)
         #detector.debug()
-        #check_cam_arm_calibration(robot, camera)
+        check_cam_arm_calibration(robot, camera)
     except KeyboardInterrupt:
         pass
     robot.disconnect()

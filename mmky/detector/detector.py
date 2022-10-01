@@ -95,11 +95,11 @@ class Detector(object):
         while found == 0:
             # sample and average three frames
             (color_img, depth_img, ts) = self.camera.get_image()
-            avg_depth = np.copy(depth_img)
+            avg_depth = np.copy(depth_img) / 3
             for i in range(2):            
-                (color_img, depth_img, ts) = self.camera.get_image()
-                avg_depth += depth_img
                 time.sleep(0.033)
+                (color_img, depth_img, ts) = self.camera.get_image()
+                avg_depth += depth_img / 3
             depth_img = avg_depth
             color_img = np.copy(color_img) # we don't own the buffer returned by get_image
 
@@ -173,14 +173,14 @@ def debug():
     import mmky.k4a as k4a
     cam = k4a.Camera(device_id=2)
     cam.start()
-    eye = Detector(cam, show_debug_view=True)
+    eye = Detector(cam, show_debug_view=True, cam2arm_file=None)
     while True:
         eye.detect_keypoints()
     cam.stop()
 
 def display_depth():
     import mmky.k4a as k4a
-    cam = k4a.Camera()
+    cam = k4a.Camera(device_id=2)
     cam.start()
     while cv2.waitKey(33) < 0:
         capture = cam.get_image()

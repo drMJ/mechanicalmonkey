@@ -1,6 +1,7 @@
 import math
 import cv2
-from ._bindings.k4a import k4a_transformation_create, k4a_transformation_depth_image_to_color_camera
+import numpy as np
+from ._bindings.k4a import k4a_transformation_create, k4a_transformation_depth_image_to_color_camera, k4a_calibration_2d_to_3d
 from ._bindings.k4atypes import *
 from ._bindings.device import Device
 from ._bindings.capture import Capture
@@ -37,8 +38,8 @@ class Camera:
         exposure_mode = EColorControlMode.MANUAL if exposure else EColorControlMode.AUTO
         self._device.set_color_control(EColorControlCommand.EXPOSURE_TIME_ABSOLUTE, exposure_mode, exposure)
 
-        self.calibration = self._device.get_calibration(self.cfg.depth_mode, self.cfg.color_resolution)
-        self._transform  = k4a_transformation_create(self.calibration._calibration)
+        self._calibration = self._device.get_calibration(self.cfg.depth_mode, self.cfg.color_resolution)
+        self._transform  = Transformation.create(self._calibration)
         resolution = self.cfg.color_resolution if isinstance(self.cfg.color_resolution, tuple) else color_resolutions[self.cfg.color_resolution]
         self._transformed_depth = Image.create(EImageFormat.DEPTH16, resolution[0], resolution[1], resolution[0]*2)
         self.crop = kwargs.get("crop", (0, 0, resolution[0], resolution[1]))
@@ -56,7 +57,7 @@ class Camera:
         
         # project depth into color camera
         if self.capture.depth:
-            k4a_transformation_depth_image_to_color_camera(self._transform, self.capture.depth._image_handle, self._transformed_depth._image_handle)
+            self._transform.depth_image_to_color_camera(self.capture.depth, self._transformed_depth)
 
         # crop and resize color image and _transformed_depth
         if color_buffer is not None:

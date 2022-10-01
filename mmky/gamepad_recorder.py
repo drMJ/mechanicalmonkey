@@ -101,8 +101,8 @@ class gamepad_or_keyboard():
 
 if __name__ == '__main__':
     use_sim=False
-    joint_gain = 0.1
-    pose_gain = 0.02
+    joint_gain = 0.15
+    pose_gain = 0.03
     third_person_pov = True
     gripper_moving = False
     xy_reference_angle = 0
@@ -139,9 +139,9 @@ if __name__ == '__main__':
         # perform the action
         if use_sim:
             # hack, move_rt doesn't yet work well in sim
-            robot.move(target, max_speed=1, max_acc=1, force_limit=(-max_force, max_force), timeout=0.0)
+            robot.move(target, max_speed=max_speed, max_acc=max_acc, force_limit=(-max_force, max_force), timeout=0.0)
         else:
-            robot.move_rt(target, duration=0.01, max_speed=1, max_acc=1, force_limit=(-max_force, max_force), timeout=0.0)
+            robot.move_rt(target, duration=0.01, max_speed=max_speed, max_acc=max_acc, force_limit=(-max_force, max_force), timeout=0.0)
 
     home = Joints(0, -math.pi / 2, math.pi / 2, -math.pi / 2, -math.pi / 2, 0)
     t0 = time.time()
@@ -199,28 +199,29 @@ if __name__ == '__main__':
                 lx = -lx
                 ly = -ly
 
-            norm = np.linalg.norm([rx, ry, lx, ly])
-            force = lerp(f_range, norm)
-            dz = pose_gain * ry
-            (x, y, z, roll, pitch, yaw) = robot.arm.state.tool_pose().to_xyzrpy()
-            d = math.sqrt(x*x + y*y)
-            a = math.atan2(y, x)
+            norm = np.linalg.norm([ry, lx, ly])
+            if norm:
+                force = lerp(f_range, norm)
+                dz = pose_gain * ry
+                (x, y, z, roll, pitch, yaw) = robot.arm.state.tool_pose().to_xyzrpy()
+                d = math.sqrt(x*x + y*y)
+                a = math.atan2(y, x)
 
-            if cylindrical:
-                da = joint_gain * -lx
-                dd = pose_gain * ly
-                a = a + da
-                d = d + dd
-                yaw = yaw + da
-                x = d * math.cos(a)
-                y = d * math.sin(a)
-            else:
-                x += -pose_gain * lx * math.sin(xy_reference_angle) - pose_gain * ly * math.cos(xy_reference_angle)
-                y += pose_gain * lx * math.cos(xy_reference_angle) - pose_gain * ly * math.sin(xy_reference_angle)
+                if cylindrical:
+                    da = joint_gain * -lx
+                    dd = pose_gain * ly
+                    a = a + da
+                    d = d + dd
+                    yaw = yaw + da
+                    x = d * math.cos(a)
+                    y = d * math.sin(a)
+                else:
+                    x += -pose_gain * lx * math.sin(xy_reference_angle) - pose_gain * ly * math.cos(xy_reference_angle)
+                    y += pose_gain * lx * math.cos(xy_reference_angle) - pose_gain * ly * math.sin(xy_reference_angle)
 
-            z = z + dz
-            target = Tool.from_xyzrpy([x, y, z, roll, pitch, yaw])
-            move(target, force)
+                z = z + dz
+                target = Tool.from_xyzrpy([x, y, z, roll, pitch, yaw])
+                move(target, force)
 
         if gk.left_trigger() > 0:
             robot.open(speed=gk.left_trigger(), timeout=0)
