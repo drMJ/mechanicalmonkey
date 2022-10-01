@@ -1,6 +1,5 @@
 import sys
 import os
-import mmky.k4a as k4a
 import cv2
 import numpy as np
 import math
@@ -9,9 +8,9 @@ import random
 
 DEFAULT_KINECT_ID = 1
 
-class KinectDetector(object):
+class Detector(object):
 
-    def __init__(self, device_id=DEFAULT_KINECT_ID, cam2arm_file="cam2arm.csv", reset_bkground=False, datadir="data", blob_detector={}, show_debug_view=False):
+    def __init__(self, camera, cam2arm_file="cam2arm.csv", reset_bkground=False, datadir="data", blob_detector={}, show_debug_view=False):
         # set up the detector
         params = cv2.SimpleBlobDetector_Params()
         params.filterByColor = blob_detector.get("filterByColor", False)
@@ -33,44 +32,33 @@ class KinectDetector(object):
         params.thresholdStep = blob_detector.get("minDistBetweenBlobs", 5)
 
         self.detector = cv2.SimpleBlobDetector_create(params)
-        self.__started = False
         self.show_debug_view = show_debug_view
-
-        # turn on the kinect
-        self.k4a = k4a.Device.open(device_id)
-        self.config = k4a.DeviceConfiguration(color_format=k4a.EImageFormat.COLOR_BGRA32, depth_mode=k4a.EDepthMode.NFOV_UNBINNED)
-        self.calibration = self.k4a.get_calibration(depth_mode=k4a.EDepthMode.NFOV_UNBINNED, color_resolution=k4a.EColorResolution.RES_720P)
-        self.transform = k4a.Transformation.create(self.calibration)
+        self.camera = camera
 
         if not os.path.isabs(datadir):
             datadir = os.path.join(os.path.dirname(__file__), datadir)
-        bkg_file_name = os.path.join(datadir, "background.bin")
+        bkg_file_name = os.path.join(datadir, "background.npy")
         bkg_mask_file_name = os.path.join(datadir, "backgroundmask.png")
-        rgb_mask_file_name = os.path.join(datadir, "rgbmask.png")
-        center_pnt_file_name = os.path.join(datadir, "wscenterpoint.csv")
         reinit = False
         if os.path.isfile(bkg_file_name) and not reset_bkground:
-            self.background = np.fromfile(bkg_file_name, np.uint16).astype(np.int16)
+            self.background = np.load(bkg_file_name).astype(np.int16)
         else:
             input("Starting background capture. Make sure the workspace is clear and press Enter to continue...")
             cnt = 30
-            self.start()
-            capture = self.k4a.get_capture(-1)
-            depth_img = capture.depth.data
+            (color_img, depth_img, ts) = self.camera.get_image()
+            avg_depth = np.copy(depth_img)
             for i in range(cnt - 1):
-                capture = self.k4a.get_capture(-1)
-                depth_img += capture.depth.data
+                (color_img, depth_img, ts) = self.camera.get_image()
+                avg_depth += depth_img
                 time.sleep(0.033)
-            self.stop()
-            self.background = (depth_img / cnt).astype(np.int16)
-            self.background.tofile(bkg_file_name)
+            self.background = (avg_depth / cnt).astype(np.int16)
+            np.save(bkg_file_name, self.background)
 
             if not os.path.isfile(bkg_mask_file_name):
                 mask = self.background
                 maxdist = np.max(mask)
                 mask = (mask.astype(float) * 255 / maxdist).astype(np.uint8)
                 cv2.imwrite(bkg_mask_file_name, mask)
-                cv2.imwrite(rgb_mask_file_name, capture.color.data)
                 print("Background mask generated. You need to edit the png file and mark the exclusion area in red (R=255) before continuing.")
 
             print("Background capture completed.")
@@ -82,41 +70,15 @@ class KinectDetector(object):
         mask_coords = np.where(self.mask)
         self.mask_bounding_box = (slice(min(mask_coords[0]), max(mask_coords[0])), slice(min(mask_coords[1]), max(mask_coords[1])))
 
-        rgbmask = cv2.imread(rgb_mask_file_name)
-        self.rgbmask = np.logical_not((rgbmask[:, :, 0] == 0) & (rgbmask[:, :, 1] == 0) & (rgbmask[:, :, 2] == 255))
-        rgb_mask_coords = np.where(self.rgbmask)
-        self.rgb_mask_bounding_box = (slice(min(rgb_mask_coords[0]), max(rgb_mask_coords[0])), slice(min(rgb_mask_coords[1]), max(rgb_mask_coords[1])))
-
-        self.background = self.background.astype(np.int16)
         self.background = np.where(self.background < 2200, self.background, 0)
-        self.background = self.background.reshape((576, 640))
 
         if cam2arm_file is not None:
-            self.k4a2arm_mat = np.fromfile(os.path.join(datadir, cam2arm_file), sep=',').reshape((3, 4)).transpose()
-        if not os.path.isfile(center_pnt_file_name) and cam2arm_file is not None:
-            input("Place one object in the middle of the workspace and press Enter. ")
-            kps = self.detect_keypoints(use_arm_coord=True)
-            self.ws_center = kps[0]
-            self.ws_center.tofile(center_pnt_file_name, sep=',')
-            print(self.ws_center)
-            reinit = True
-        else:
-            self.ws_center = np.fromfile(center_pnt_file_name, sep=',')
+            self.cam2arm_mat = np.fromfile(os.path.join(datadir, cam2arm_file), sep=',').reshape((3, 4)).transpose()
 
         if reinit:
             input("Detector reconfiguration completed. Set up the scene and press Enter to continue...")
 
-    def stop(self):
-        self.__started = False
-        self.k4a.stop_cameras()
-
-    def start(self):
-        self.__started = True
-        self.k4a.start_cameras(self.config)
-
-    def close(self):
-        self.k4a.close()
-
+    
     def get_visual_target(self):
         # pick one target at random
         objs = self.detect_keypoints(use_arm_coord=True)
@@ -126,25 +88,20 @@ class KinectDetector(object):
     def to_arm_coord(self, point):
         # pick one target at random
         kp = np.append(point[:3], [1])
-        return (kp@self.k4a2arm_mat)[0:3]
+        return (kp@self.cam2arm_mat)[0:3]
 
     def detect_keypoints(self, use_arm_coord=False):
-        if not self.__started:
-            self.start()
-
         found = 0
         while found == 0:
             # sample and average three frames
-            capture = self.k4a.get_capture(-1)
-            depth_img = capture.depth.data / 3
-            time.sleep(0.033)
-            capture = self.k4a.get_capture(-1)
-            depth_img = depth_img + capture.depth.data / 3
-            time.sleep(0.033)
-            capture = self.k4a.get_capture(-1)
-            depth_img = depth_img + capture.depth.data / 3
-
-            color_img = capture.color.data
+            (color_img, depth_img, ts) = self.camera.get_image()
+            avg_depth = np.copy(depth_img) / 3
+            for i in range(2):            
+                time.sleep(0.033)
+                (color_img, depth_img, ts) = self.camera.get_image()
+                avg_depth += depth_img / 3
+            depth_img = avg_depth
+            color_img = np.copy(color_img) # we don't own the buffer returned by get_image
 
             # subtract background
             objects = self.background.astype(int) - np.where(depth_img < 2500, depth_img, 0)
@@ -176,45 +133,23 @@ class KinectDetector(object):
             if not np.any(region > 0):
                 continue
             depth = np.sum(region) / np.count_nonzero(region)
-            obj["rgb_pos_3d"] = np.array(self.transform.pixel_2d_to_point_3d(
-                (kp.pt[1], kp.pt[0]),
-                depth,
-                k4a.ECalibrationType.DEPTH,
-                k4a.ECalibrationType.COLOR)) / 1000 # in meters
-            depth_pos_3d = np.array(self.transform.pixel_2d_to_point_3d(
-                (kp.pt[1], kp.pt[0]),
-                depth,
-                k4a.ECalibrationType.DEPTH,
-                k4a.ECalibrationType.DEPTH)) / 1000 # in meters
-            depth_pos_3d_delta = np.array(self.transform.pixel_2d_to_point_3d(
-                (kp.pt[1] + radius, kp.pt[0] + radius),
-                depth,
-                k4a.ECalibrationType.DEPTH,
-                k4a.ECalibrationType.DEPTH)) / 1000 # in meters
-            obj["depth_pos_3d"] = depth_pos_3d
-            obj["position"] = self.to_arm_coord(depth_pos_3d) if use_arm_coord else depth_pos_3d
+            obj["pos_3d"] = pos_3d = self.camera.get_3d_coordinates(kp.pt[1], kp.pt[0], depth)
+            pos_3d_delta = self.camera.get_3d_coordinates(kp.pt[1]+radius, kp.pt[0]+radius, depth)
+            obj["position"] = self.to_arm_coord(pos_3d) if use_arm_coord else pos_3d
             obj["elevation"] = np.average(objects[y-radius:y+radius, x-radius:x+radius]) / 1000.
-            obj["size"] = np.abs(depth_pos_3d - depth_pos_3d_delta) * 2
-            obj["size"][2] = np.max(obj["elevation"])
-            obj["depth_pos_2d"] = np.array([
+            obj["size"] = np.abs(pos_3d - pos_3d_delta) * 2
+            obj["size"][2] = obj["elevation"]
+            obj["pos_2d"] = np.array([
                 kp.pt[1], # x in image
                 kp.pt[0], # y in image
                 depth])
-            rgb_coords = self.transform.pixel_2d_to_pixel_2d(
-                (kp.pt[0], kp.pt[1]), # TODO fix (see detector branch). Coords are all over the place
-                depth,
-                k4a.ECalibrationType.DEPTH,
-                k4a.ECalibrationType.COLOR)
-            rgb_x = int(rgb_coords[0] + 0.5)
-            rgb_y = int(rgb_coords[1] + 0.5)
-            obj["rgb_pos_2d"] = np.array([rgb_x, rgb_y, depth])
-            obj["img"] = color_img[rgb_y-radius:rgb_y+radius, rgb_x-radius:rgb_x+radius]
-            obj["color"] = np.average(color_img[rgb_y-radius:rgb_y+radius, rgb_x-radius:rgb_x+radius], axis=(0, 1))
+            obj["img"] = color_img[y-radius:y+radius, x-radius:x+radius]
+            obj["color"] = np.average(obj["img"] , axis=(0, 1))
             if self.show_debug_view:
-                color_img[rgb_y-radius:rgb_y+radius, rgb_x-radius:rgb_x+radius] += np.array([50, 50, 50, 0], dtype=np.uint8)
+                color_img[y-radius:y+radius, x-radius:x+radius] += np.array([50, 50, 50, 0], dtype=np.uint8)
             obj["mask_pos_2d"] = np.array([
-                rgb_x - self.rgb_mask_bounding_box[1].start, # x in image
-                rgb_y - self.rgb_mask_bounding_box[0].start, # y in image
+                x - self.mask_bounding_box[1].start, # x in image
+                y - self.mask_bounding_box[0].start, # y in image
                 depth])
             pts[i] = obj
             i = i + 1
@@ -232,32 +167,35 @@ class KinectDetector(object):
         return pts
 
     def get_last_image(self, crop_to_mask=True):
-        return self.last_raw_color_image[self.rgb_mask_bounding_box] if crop_to_mask else self.last_raw_color_image
+        return self.last_raw_color_image[self.mask_bounding_box] if crop_to_mask else self.last_raw_color_image
 
 def debug():
-    eye = KinectDetector(device_id=1, show_debug_view=True)
+    import mmky.k4a as k4a
+    cam = k4a.Camera(device_id=2)
+    cam.start()
+    eye = Detector(cam, show_debug_view=True, cam2arm_file=None)
     while True:
         eye.detect_keypoints()
+    cam.stop()
 
 def display_depth():
-    cam = k4a.Device.open(DEFAULT_KINECT_ID)
-    config = k4a.DeviceConfiguration(color_format=k4a.EImageFormat.COLOR_BGRA32, depth_mode=k4a.EDepthMode.NFOV_UNBINNED)
-    cam.start_cameras(config)
-    while True:
-        capture = cam.get_capture(-1)
-        depth_img = capture.depth.data
+    import mmky.k4a as k4a
+    cam = k4a.Camera(device_id=2)
+    cam.start()
+    while cv2.waitKey(33) < 0:
+        capture = cam.get_image()
+        depth_img = capture[1]
         img = depth_img.astype(np.uint8)
         img[::10, ::10] = 255
         cv2.imshow("Depth", img)
-        cv2.waitKey(1)
 
-    cam.close()
+    cam.stop()
 
 
 if __name__ == '__main__':
     #display_depth()
     debug()
-    # k = KinectDetector(cam2arm_file=None)
+    # k = Detector(cam2arm_file=None)
     # while True:
     #     k.detect_keypoints()
     # k.close()
