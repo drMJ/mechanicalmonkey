@@ -1,0 +1,50 @@
+use_sim: True
+obs_res: [224, 224]
+render_mode: None # use 'human' to display camera images
+max_steps: 500
+random_start: False
+workspace:
+  radius: [0.4, 0.75]
+  span: [3.5, 4]
+  height: -0.122
+grasp_mode: GraspMode.PINCH
+grasp_state: 128
+start_position: Joints(0, -1.57, 1.57, -1.57, -1.57, 0)
+
+robot:
+  arm_ip: 192.168.1.2
+  hand_ip: 192.168.1.11
+  local_ip: 192.168.1.9
+  local_port: 50003
+  sim.use_gui: True
+
+sim_scene:
+  cpu_rendering: True
+  legos:
+    lego1:
+      color: [0, 0, 1, 1]
+      mesh: legobrick4x2
+    lego2:
+      color: [0, 1, 0, 1]
+      mesh: legobrick4x2
+  cameras:
+    cam1:
+      cameraEyePosition: [-1.0, -0.8, 0.40]
+      cameraTargetPosition: [0, 0.2, 0]
+      cameraUpVector: [0, 0, 1]
+      fov: 59
+
+real_scene:
+  # out_position: Joints(1.57,-1.52, 1.85, -1.9, -1.57, 0)
+  # detector:
+  #   device_id: 1
+  cameras:
+    cam1:
+      device_id: 0
+      type: k4a
+    cam2:
+      device_id: 1
+      type: k4a
+    cam3:
+      device_id: 2
+      type: k4a
