@@ -1,0 +1,51 @@
+use_sim: False
+obs_res: [256, 256]
+render_mode: rgb
+max_steps: 500
+random_start: True
+workspace:
+  radius: [-0.4, -0.8]
+  span: [-0.5, 0.5]
+  height: -0.18
+grasp_mode: GraspMode.PINCH
+grasp_state: 255
+start_position: Joints(0,-1.57, 1.57, -1.57, -1.57, 0)
+#neutral_position: Joints(0,-1.57, 1.57, -1.57, -1.57, 0)
+
+robot:
+  arm_ip: 192.168.1.2
+  hand_ip: 192.168.1.11
+  local_ip: 192.168.1.9
+  local_port: 50003
+  sim.use_gui: False
+
+sim_scene:
+  cpu_rendering: True
+  obj_size: 0.04
+  obj_kind: "cube"
+  cameras:
+    cam1:
+      # cameraEyePosition: [-1.0, -0.8, 0.40]
+      # cameraTargetPosition: [0, 0.2, 0]
+      # cameraUpVector: [0, 0, 1]
+      # fov: 59
+
+real_scene:
+  out_position: Joints(-1.57,-1.57, 1.57, -1.57, -1.57, 0)
+  
+  detector:
+    camera: overhead_cam
+    datadir: data\ws1
+  cameras:
+    right_cam:
+      device_id: 0
+      type: k4a
+    left_cam:
+      device_id: 1
+      type: k4a
+    overhead_cam:
+      device_id: 2
+      type: k4a
+    palm_cam:
+      device_id: 0
+      type: realsense

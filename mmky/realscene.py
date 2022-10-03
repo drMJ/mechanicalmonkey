@@ -15,21 +15,27 @@ class RealScene:
                  neutral_position=None,
                  detector=None, 
                  **kwargs):
-        from mmky import k4a
-        from mmky.detector import KinectDetector
+        
+        from mmky.detector import Detector
         
         self.robot = robot
         self.obs_res = obs_res
         self.workspace_radius, self.workspace_span, self.workspace_height = workspace.values()
         self.out_position = eval(out_position) if out_position else None
         self.neutral_position = eval(neutral_position) if neutral_position else None
-        self.detector = KinectDetector(**detector) if detector else None
         self.cameras = {}
         for cam_tag, cam_def in cameras.items():
             if cam_def["type"] == "k4a":
-                self.cameras[cam_tag] = k4a.Device.open(cam_def["device_id"])
+                from mmky import k4a
+                self.cameras[cam_tag] = k4a.Camera(**cam_def)
+            elif cam_def["type"] == "realsense":
+                from mmky import realsense as rs
+                self.cameras[cam_tag] = rs.Camera(**cam_def)
             else:
                 raise ValueError(f'Unsupported camera type {cam_def["type"]}. ')
+        
+        detector["camera"] = self.cameras[detector["camera"]]
+        self.detector = Detector(**detector) if detector else None
 
         self.k4a_config = k4a.DeviceConfiguration(
             color_format=k4a.EImageFormat.COLOR_BGRA32,
@@ -46,28 +52,20 @@ class RealScene:
         self.robot.move(home_pose, max_speed=0.5, max_acc=0.5)
 
     def connect(self):
-        self.__start_cameras()
+        for cam in self.cameras.values():
+            cam.start()
         return self
 
     def disconnect(self):
-        self.__stop_cameras()
+        for cam in self.cameras.values():
+            cam.stop()
 
     def get_camera_count(self):
         return len(self.cameras)
 
     def get_camera_image(self, id):
         cam = self.cameras[id]
-        capture: k4a.Capture = cam.get_capture(-1)
-        w = self.obs_res[0]
-        h = self.obs_res[1]
-        fx = w / capture.color.width_pixels
-        fy = h / capture.color.height_pixels
-        f = max(fx, fy)
-        rw = int(capture.color.width_pixels * f + 0.5)
-        rh = int(capture.color.height_pixels * f + 0.5)
-        img = cv2.resize(capture.color.data, (rw, rh))
-        img = img[int((rh-h)/2): int((rh+h)/2), int((rw-w)/2): int((rw+w)/2)]
-        img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB) 
+        img = cam.get_image()
         return img
 
     def get_camera_images(self):
@@ -86,18 +84,6 @@ class RealScene:
                 self.robot.move(self.neutral_position, max_speed=3, max_acc=1)
             if self.out_position:
                 self.robot.move(self.out_position, max_speed=3, max_acc=1)
-        self.__stop_cameras()
-        self.detector.start()
         self._world_state = self.detector.detect_keypoints(use_arm_coord=True)
-        self.detector.stop()
-        self.__start_cameras()
         if self.neutral_position:
             self.robot.move(self.neutral_position, max_speed=3, max_acc=1)
-
-    def __start_cameras(self):
-        for cam in self.cameras.values():
-            cam.start_cameras(self.k4a_config)
-
-    def __stop_cameras(self):
-        for cam in self.cameras.values():
-            cam.stop_cameras()

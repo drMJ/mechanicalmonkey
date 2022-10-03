@@ -1,1 +1,1 @@
-from .detector import KinectDetector
+from .detector import Detector

@@ -91,8 +91,9 @@ class Detector(object):
         return (kp@self.cam2arm_mat)[0:3]
 
     def detect_keypoints(self, use_arm_coord=False):
+        retries = 5
         found = 0
-        while found == 0:
+        while found == 0 and retries:
             # sample and average three frames
             (color_img, depth_img, ts) = self.camera.get_image()
             avg_depth = np.copy(depth_img) / 3
@@ -100,11 +101,12 @@ class Detector(object):
                 time.sleep(0.033)
                 (color_img, depth_img, ts) = self.camera.get_image()
                 avg_depth += depth_img / 3
-            depth_img = avg_depth
+            depth_img = np.where(avg_depth>0, avg_depth, 20000)
             color_img = np.copy(color_img) # we don't own the buffer returned by get_image
 
             # subtract background
-            objects = self.background.astype(int) - np.where(depth_img < 2500, depth_img, 0)
+
+            objects = self.background.astype(int) - np.where(depth_img < 1500, depth_img, 10000)
             objects = np.where(self.mask, objects, 0)
             objects = np.where(objects > 0, objects, 0)
             img = (np.where(objects < 50, objects, 50) * 5).astype(np.uint8)
@@ -115,6 +117,7 @@ class Detector(object):
                 (x,y) = (int(kp.pt[1]), int(kp.pt[0]))
                 if np.any(depth_img[x - 3: x + 4, y - 3: y + 4] > 0):
                     found = found + 1
+            retries -= 1
 
         self.last_processed_depth_image = img
         self.last_raw_depth_image = depth_img
@@ -169,11 +172,11 @@ class Detector(object):
     def get_last_image(self, crop_to_mask=True):
         return self.last_raw_color_image[self.mask_bounding_box] if crop_to_mask else self.last_raw_color_image
 
-def debug():
+def debug(data_dir):
     import mmky.k4a as k4a
     cam = k4a.Camera(device_id=2)
     cam.start()
-    eye = Detector(cam, show_debug_view=True, cam2arm_file=None)
+    eye = Detector(cam, show_debug_view=True, cam2arm_file=None, datadir=data_dir)
     while True:
         eye.detect_keypoints()
     cam.stop()
@@ -194,7 +197,7 @@ def display_depth():
 
 if __name__ == '__main__':
     #display_depth()
-    debug()
+    debug("data\\ws1")
     # k = Detector(cam2arm_file=None)
     # while True:
     #     k.detect_keypoints()

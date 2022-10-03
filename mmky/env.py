@@ -78,15 +78,18 @@ class RomanEnv(gym.Env):
         self.success = False
         if isinstance(self.home_pose, Joints):
             joints = self.home_pose or self.robot.joint_positions
-            self.robot.move(joints, max_speed=0.5, max_acc=0.5)
+            if not self.robot.move(joints, max_speed=0.5, max_acc=0.5, timeout=5):
+                raise Exception(f"Home pose {joints} could not be reached. Motion timed out at {self.robot.last_state().joint_positions()}")
             self.home_pose = self.robot.tool_pose
         elif not self.home_pose:
             self.home_pose = self.robot.tool_pose
-        if self.random_start:
-            self.home_pose[:2] = primitives.generate_random_xy(*self.workspace_span, *self.workspace_radius)
         self.scene.reset(home_pose=self.home_pose, **kwargs)
         self.robot.set_hand_mode(self.grasp_mode)
         self.robot.grasp(self.grasp_state)
+        if self.random_start:
+            self.home_pose[:2] = primitives.generate_random_xy(*self.workspace_span, *self.workspace_radius)
+            if not self.robot.move(self.home_pose, max_speed=0.5, max_acc=0.5, timeout=5):
+                self.robot.stop() # this pose is as good as any
         return self._observe()
 
     def end_episode(self, success=True):
