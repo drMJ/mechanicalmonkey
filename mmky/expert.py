@@ -22,7 +22,7 @@ class Expert:
         self._writer_enabled = True
         print("Episode started")
 
-    def _end_episode(self, discard = false):
+    def _end_episode(self, discard = False):
         self.done = True
         self.robot.step()
         self.writer.end_episode(discard = discard)

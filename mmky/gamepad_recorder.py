@@ -107,9 +107,8 @@ if __name__ == '__main__':
     gripper_moving = False
     xy_reference_angle = 0
     cylindrical = True
-    force_limit_default = FORCE_LIMIT_DEFAULT[1]
-    force_limit_range = (FORCE_LIMIT_TOUCH[1], force_limit_default)
-    force_limit_override_range = (force_limit_default, 5 * np.array(force_limit_default))
+    force_limit_default = np.array(FORCE_LIMIT_DEFAULT[1])
+    force_limit_override = 5 * force_limit_default
 
     robot = connect(use_sim=use_sim)
     gk = gamepad_or_keyboard()
@@ -134,28 +133,28 @@ if __name__ == '__main__':
     )
 
     assert(not robot.is_moving())
-    def move(target, max_force, duration=0.01, max_speed=2, max_acc=1):
+    def move(target, max_force, duration=0.01, max_speed=1, max_acc=1):
         max_force = np.array(max_force)
         # perform the action
         if use_sim:
             # hack, move_rt doesn't yet work well in sim
             robot.move(target, max_speed=max_speed, max_acc=max_acc, force_limit=(-max_force, max_force), timeout=0.0)
         else:
-            robot.move_rt(target, duration=0.01, max_speed=max_speed, max_acc=max_acc, force_limit=(-max_force, max_force), timeout=0.0)
+            robot.move_rt(target, duration=0.033, max_speed=max_speed, max_acc=max_acc, force_limit=(-max_force, max_force), timeout=0.0)
 
     home = Joints(0, -math.pi / 2, math.pi / 2, -math.pi / 2, -math.pi / 2, 0)
     t0 = time.time()
     while not done:
-        # print(time.time()-t0)
+        #print(time.time()-t0)
         t0 = time.time()
         gk.refresh()
         third_person_pov = gk.button_toggled(BTN_X, third_person_pov)
         cylindrical = gk.button_toggled(THUMB_STICK_PRESS_LEFT, cylindrical)
         if gk.button_pressed(BTN_BACK):
             xy_reference_angle = robot.arm.state.joint_positions()[Joints.BASE]
-        f_range = force_limit_override_range if gk.button_pressed(THUMB_STICK_PRESS_RIGHT) else force_limit_range
+        force = force_limit_override if gk.button_pressed(THUMB_STICK_PRESS_RIGHT) else force_limit_default
         if gk.button_pressed(BTN_MENU):
-            move(home, force_limit_default)
+            move(home, force)
         elif gk.button_pressed(BTN_SHOULDER_RIGHT):
             # wrist control in joint positions. Direction is optimized for the gripper-down position
 
@@ -169,7 +168,7 @@ if __name__ == '__main__':
 
             target = robot.arm.state.joint_positions() + joint_gain * np.array([0, 0, 0, wrist1, wrist2, wrist3])
             norm = np.linalg.norm([wrist1, wrist2, wrist3])
-            move(target, lerp(f_range, norm))
+            move(target, force)
         elif gk.button_pressed(BTN_SHOULDER_LEFT):
             # wrist control, roll/pitch/yaw
             roll = gk.l_thumb_x()
@@ -178,7 +177,7 @@ if __name__ == '__main__':
             target = robot.arm.state.tool_pose().to_xyzrpy() + joint_gain * np.array([0, 0, 0, roll, pitch, yaw])
             target = Tool.from_xyzrpy(target)
             norm = np.linalg.norm([roll, pitch, yaw])
-            move(target, lerp(f_range, norm))
+            move(target, force)
         elif gk.button_pressed(DPAD_DOWN) or gk.button_pressed(DPAD_LEFT) or gk.button_pressed(DPAD_RIGHT) or gk.button_pressed(DPAD_UP):
             # x-y move in robot base coordinate system
             dy = pose_gain * (-1 if gk.button_pressed(DPAD_LEFT) else 1 if gk.button_pressed(DPAD_RIGHT) else 0)
@@ -189,7 +188,7 @@ if __name__ == '__main__':
 
             dz = pose_gain * -gk.r_thumb_y()
             target = robot.arm.state.tool_pose() + [dx, dy, dz, 0, 0, 0]
-            move(target, force_limit_default)
+            move(target, force)
         else:
             rx = gk.r_thumb_x()
             ry = gk.r_thumb_y()
@@ -201,7 +200,6 @@ if __name__ == '__main__':
 
             norm = np.linalg.norm([ry, lx, ly])
             if norm:
-                force = lerp(f_range, norm)
                 dz = pose_gain * ry
                 (x, y, z, roll, pitch, yaw) = robot.arm.state.tool_pose().to_xyzrpy()
                 d = math.sqrt(x*x + y*y)
@@ -222,6 +220,8 @@ if __name__ == '__main__':
                 z = z + dz
                 target = Tool.from_xyzrpy([x, y, z, roll, pitch, yaw])
                 move(target, force)
+            else:
+                robot.arm.stop()
 
         if gk.left_trigger() > 0:
             robot.open(speed=gk.left_trigger(), timeout=0)
@@ -240,5 +240,5 @@ if __name__ == '__main__':
 
         # Back btn exits
         done = keyboard.is_pressed('esc')
-        time.sleep(0.01)
+        time.sleep(0.03)
     robot.disconnect()
