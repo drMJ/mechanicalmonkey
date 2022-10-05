@@ -106,7 +106,7 @@ if __name__ == '__main__':
     third_person_pov = True
     gripper_moving = False
     xy_reference_angle = 0
-    cylindrical = True
+    cylindrical = False
     force_limit_default = np.array(FORCE_LIMIT_DEFAULT[1])
     force_limit_override = 5 * force_limit_default
 
@@ -173,7 +173,7 @@ if __name__ == '__main__':
             # wrist control, roll/pitch/yaw
             roll = gk.l_thumb_x()
             pitch = -gk.r_thumb_y()
-            yaw = -gk.r_thumb_x()
+            yaw = gk.r_thumb_x()
             target = robot.arm.state.tool_pose().to_xyzrpy() + joint_gain * np.array([0, 0, 0, roll, pitch, yaw])
             target = Tool.from_xyzrpy(target)
             norm = np.linalg.norm([roll, pitch, yaw])
@@ -198,8 +198,7 @@ if __name__ == '__main__':
                 lx = -lx
                 ly = -ly
 
-            norm = np.linalg.norm([ry, lx, ly])
-            if norm:
+            if np.any(np.array([rx, ry, lx, ly])!=0):
                 dz = pose_gain * ry
                 (x, y, z, roll, pitch, yaw) = robot.arm.state.tool_pose().to_xyzrpy()
                 d = math.sqrt(x*x + y*y)
@@ -216,13 +215,14 @@ if __name__ == '__main__':
                 else:
                     x += -pose_gain * lx * math.sin(xy_reference_angle) - pose_gain * ly * math.cos(xy_reference_angle)
                     y += pose_gain * lx * math.cos(xy_reference_angle) - pose_gain * ly * math.sin(xy_reference_angle)
+                    yaw = yaw + joint_gain * rx
 
                 z = z + dz
                 target = Tool.from_xyzrpy([x, y, z, roll, pitch, yaw])
                 move(target, force)
             else:
-                robot.arm.stop()
-
+                robot.arm.stop(blocking=False)
+        
         if gk.left_trigger() > 0:
             robot.open(speed=gk.left_trigger(), timeout=0)
             gripper_moving = True
@@ -241,4 +241,8 @@ if __name__ == '__main__':
         # Back btn exits
         done = keyboard.is_pressed('esc')
         time.sleep(0.03)
+        robot.step()
+        if robot.arm.state.is_contact():
+            print("Collision.")
+
     robot.disconnect()
