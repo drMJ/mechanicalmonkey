@@ -43,7 +43,7 @@ class Camera:
         self.needs_alignment = self.color_enabled and self.depth_enabled and device.get_info(rs.camera_info.name) != 'Intel RealSense D405' # 405 uses the same camera for depth and rgb, no need to align 
         
 
-    def get_image(self, color_buffer=None, depth_buffer=None, min_timestamp=0):
+    def get_capture(self, min_timestamp=0, color_buffer=None, depth_buffer=None):
         #assert depth_buffer is None or color_buffer.shape[:2] == depth_buffer.shape
         capture = self.pipeline.poll_for_frames()
         while capture:
@@ -78,7 +78,7 @@ class Camera:
             else:
                 depth_buffer = np.asanyarray(depth_frame.get_data())[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]]
 
-        return (color_buffer, depth_buffer, ts)
+        return (ts, color_buffer, depth_buffer)
 
     def start(self):
         self.pipeline.start(self.cfg)

@@ -138,13 +138,13 @@ class RomanEnv(gym.Env):
             "last_hand_cmd": state_cmd}
 
     def _get_camera_images(self):
-        return self.scene.get_camera_images() # this is blocking
+        return self.scene.get_camera_images() 
 
     def _get_world_state(self, force_state_refresh=False):
         return self.scene.get_world_state(force_state_refresh)
 
     def _get_proprioceptive_state(self):
-        #self.robot.step() # update the proprioceptive state without interrupting the motion or overriding the commands
+        self.robot.step() # update the proprioceptive state without interrupting the motion or overriding the commands
         arm_state, hand_state = self.robot.last_state()
         arm_cmd, hand_cmd = self.robot.last_command()
         return arm_state, hand_state, arm_cmd, hand_cmd

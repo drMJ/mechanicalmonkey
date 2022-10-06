@@ -44,7 +44,7 @@ class Camera:
         self._transformed_depth = Image.create(EImageFormat.DEPTH16, resolution[0], resolution[1], resolution[0]*2)
         self.crop = kwargs.get("crop", (0, 0, resolution[0], resolution[1]))
 
-    def get_image(self, color_buffer=None, depth_buffer=None, min_timestamp=0):
+    def get_capture(self, min_timestamp=0, color_buffer=None, depth_buffer=None):
         capture = self._device.get_capture(0)
         while capture:
             del self.capture
@@ -70,7 +70,7 @@ class Camera:
             else:
                 depth_buffer = self._transformed_depth.data[self.crop[1]:self.crop[3], self.crop[0]:self.crop[2]]
 
-        return (color_buffer, depth_buffer, timestamp)
+        return (timestamp, color_buffer, depth_buffer)
 
     def get_3d_coordinates(self, x, y, depth):
         return np.array(self._transform.pixel_2d_to_point_3d((x, y), depth, ECalibrationType.COLOR, ECalibrationType.COLOR)) / 1000 # in meters

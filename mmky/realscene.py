@@ -24,6 +24,7 @@ class RealScene:
         self.out_position = eval(out_position) if out_position else None
         self.neutral_position = eval(neutral_position) if neutral_position else None
         self.cameras = {}
+        self.camera_buffers = {}
         for cam_tag, cam_def in cameras.items():
             if cam_def["type"] == "k4a":
                 from mmky import k4a
@@ -33,7 +34,8 @@ class RealScene:
                 self.cameras[cam_tag] = rs.Camera(**cam_def)
             else:
                 raise ValueError(f'Unsupported camera type {cam_def["type"]}. ')
-        
+            self.camera_buffers[cam_tag] = [0, np.zeros(obs_res + [3]), np.zeros(obs_res)]
+
         detector["camera"] = self.cameras[detector["camera"]]
         self.detector = Detector(**detector) if detector else None
 
@@ -63,13 +65,15 @@ class RealScene:
     def get_camera_count(self):
         return len(self.cameras)
 
-    def get_camera_image(self, id):
+    def get_camera_capture(self, id):
         cam = self.cameras[id]
-        img = cam.get_image()
-        return img
+        res = cam.get_capture(*self.camera_buffers[id]) # pass the old result to ensure we get a newer capture
+        if res:
+            self.camera_buffers[id] = res
+        return res
 
     def get_camera_images(self):
-        return list(self.get_camera_image(id) for id in self.cameras.keys())
+        return list(self.get_camera_capture(id) for id in self.cameras.keys())
 
     def get_world_state(self, force_state_refresh):
         if force_state_refresh:

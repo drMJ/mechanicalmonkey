@@ -8,12 +8,11 @@ class Expert:
     def __init__(self, file_template, simscenefn, realscenefn, config):
         self.env = RomanEnv(simscenefn, realscenefn, config, full_state_writer=self)
         self.writer = RobosuiteWriter(file_template)
-        self.robot = self.env.robot
         self.images = None
         self.done = False
         self._writer_enabled = False
 
-    def _start_episode(self):
+    def run():
         self._writer_enabled = False
         obs = self.env.reset()
         self.writer.start_episode(RoboSuiteEnv.make_observation(obs))
@@ -22,9 +21,13 @@ class Expert:
         self._writer_enabled = True
         print("Episode started")
 
-    def _end_episode(self, discard = False):
+        done = False
+        while not done:
+            act = self.get_action(obs)
+            (obs, rew, done, info) = self.env.step(act)
+            self.writer.write ... obs, rew, done, info
+
         self.done = True
-        self.robot.step()
         self.writer.end_episode(discard = discard)
         self._writer_enabled = False
         print("Episode ended")

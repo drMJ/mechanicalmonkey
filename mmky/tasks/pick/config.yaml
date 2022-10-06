@@ -37,6 +37,12 @@ real_scene:
     camera: overhead_cam
     datadir: data\ws1
   cameras:
+  
+# crop and size
+# cam0: 270, 0, 640x640 (280, 175, 640x480)
+# cam1:  270, 0, 640x640 (280,175, 640x480)
+# cam2: 370,180, 512x512 (alt 320,220, 640x480)
+# rs: 720x720
     right_cam:
       device_id: 0
       type: k4a

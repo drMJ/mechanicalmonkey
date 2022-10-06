@@ -40,15 +40,20 @@ class Detector(object):
         bkg_file_name = os.path.join(datadir, "background.npy")
         bkg_mask_file_name = os.path.join(datadir, "backgroundmask.png")
         reinit = False
+        self.background = None
         if os.path.isfile(bkg_file_name) and not reset_bkground:
             self.background = np.load(bkg_file_name).astype(np.int16)
-        else:
+            (ts, color_img, depth_img) = self.camera.get_capture()
+            if self.background.shape != depth_img.shape:
+                self.background = None
+                print("Existing background does not match the camera image size.")
+        if self.background is None: 
             input("Starting background capture. Make sure the workspace is clear and press Enter to continue...")
             cnt = 30
-            (color_img, depth_img, ts) = self.camera.get_image()
+            (ts, color_img, depth_img) = self.camera.get_capture()
             avg_depth = np.copy(depth_img)
             for i in range(cnt - 1):
-                (color_img, depth_img, ts) = self.camera.get_image()
+                (ts, color_img, depth_img) = self.camera.get_capture()
                 avg_depth += depth_img
                 time.sleep(0.033)
             self.background = (avg_depth / cnt).astype(np.int16)
@@ -95,14 +100,14 @@ class Detector(object):
         found = 0
         while found == 0 and retries:
             # sample and average three frames
-            (color_img, depth_img, ts) = self.camera.get_image()
+            (ts, color_img, depth_img) = self.camera.get_capture()
             avg_depth = np.copy(depth_img) / 3
             for i in range(2):            
                 time.sleep(0.033)
-                (color_img, depth_img, ts) = self.camera.get_image()
+                (ts, color_img, depth_img) = self.camera.get_capture()
                 avg_depth += depth_img / 3
             depth_img = np.where(avg_depth>0, avg_depth, 20000)
-            color_img = np.copy(color_img) # we don't own the buffer returned by get_image
+            color_img = np.copy(color_img) # we don't own the buffer returned by get_capture
 
             # subtract background
 
@@ -184,10 +189,12 @@ def debug(data_dir):
 def display_depth():
     import mmky.k4a as k4a
     cam = k4a.Camera(device_id=2)
+    # import mmky.realsense as rs
+    # cam = rs.Camera(device_id=0)
     cam.start()
     while cv2.waitKey(33) < 0:
-        capture = cam.get_image()
-        depth_img = capture[1]
+        capture = cam.get_capture()
+        depth_img = capture[2]
         img = depth_img.astype(np.uint8)
         img[::10, ::10] = 255
         cv2.imshow("Depth", img)
