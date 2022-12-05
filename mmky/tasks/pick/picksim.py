@@ -18,9 +18,9 @@ class PickSim(SimScene):
 
     def eval_state(self, world_state):
         rew = 0
+        success = self.robot.has_object
+        # TODO fix usage of len(world_state.items()), since in sim this is never true
         if self.robot.has_object and len(world_state.items()) == 0:
             rew = 1
-
-        success = (rew == 1)
-        done = self.robot.has_object or len(world_state.items()) == 0
+        done = self.robot.has_object and len(world_state.items()) == 0 
         return rew, success, done

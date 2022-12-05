@@ -8,7 +8,7 @@ from roman import connect, Robot, Tool, Joints, GraspMode
 from detector import Detector
 
 rootdir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-datadir = os.path.join(rootdir, "mmky\\detector\\data")
+rootdatadir = os.path.join(rootdir, "mmky\\detector")
 
 def move_lin_touch(target):
     robot.arm.touch(target)
@@ -17,7 +17,7 @@ def move_lin_touch(target):
         robot.arm.touch(target)
     target[:] = robot.arm.state.tool_pose()
 
-def calibrate_camera(robot:Robot, camera):
+def calibrate_camera(robot:Robot, camera, datadir="data", reset_bkground=True):
     POSE_COUNT=10
     cam_poses = np.zeros((POSE_COUNT, 3))
     arm_poses = np.zeros((POSE_COUNT, 3))
@@ -28,8 +28,8 @@ def calibrate_camera(robot:Robot, camera):
     backoff_delta = np.array([0,0,0.02,0,0,0])
 
     existing_sample_count = 0
-    cam_poses_file = os.path.join(datadir, "cam_poses.csv")
-    arm_poses_file = os.path.join(datadir, "arm_poses.csv")
+    cam_poses_file = os.path.join(rootdatadir, datadir, "cam_poses.csv")
+    arm_poses_file = os.path.join(rootdatadir, datadir, "arm_poses.csv")
     if os.path.isfile(cam_poses_file):
         cam_poses_file = open(cam_poses_file, 'a')
         cam_poses_file.write(',')
@@ -49,7 +49,7 @@ def calibrate_camera(robot:Robot, camera):
 
     # # start the detector
     robot.arm.move(out_position, max_speed=1, max_acc=0.5)
-    eye = Detector(camera, cam2arm_file=None, reset_bkground=True)
+    eye = Detector(camera, cam2arm_file=None, reset_bkground=reset_bkground, datadir=datadir)
     robot.arm.move(home_pose, max_speed=1, max_acc=0.5)
 
     # prep the hand
@@ -132,6 +132,10 @@ def calibrate_camera(robot:Robot, camera):
 
         # detect and save the marker object
         arm_poses[pindex][:] = top[:3]
+        kps = eye.detect_keypoints()
+        while len(kps) != 1:
+            input(f"Detected {len(kps)} objects, expected just one. Reset the scene and press enter to continue.")
+            kps = eye.detect_keypoints()
         kp = eye.detect_keypoints()[0]["pos_3d"]
         if not np.array_equal(kp, [0,0,0]):
             cam_poses[pindex] = kp
@@ -152,21 +156,19 @@ def calibrate_camera(robot:Robot, camera):
     #    cp =  np.append(cam_poses[i, :], [1])
     #    print(w@cp)
 
-def compute_and_verify(camera):
-    
-    cam_poses = np.fromfile(os.path.join(datadir, "cam_poses.csv"), sep=',')
+def compute_and_verify(camera, datadir="data"):
+    cam_poses = np.fromfile(os.path.join(rootdatadir, datadir, "cam_poses.csv"), sep=',')
     sample_count = len(cam_poses) // 3 
     cam_poses = cam_poses.reshape((sample_count, 3))
-    arm_poses = np.fromfile(os.path.join(datadir, "arm_poses.csv"), sep=',').reshape((sample_count, 3))
-
+    arm_poses = np.fromfile(os.path.join(rootdatadir, datadir, "arm_poses.csv"), sep=',').reshape((sample_count, 3))
     cam_poses4 = np.ones((sample_count, 4))
     cam_poses4 [:, 0:3] = cam_poses
     w = np.zeros((3, 4))
     for i in range(3):
         w[i] = np.linalg.lstsq(cam_poses4, arm_poses[:,i], rcond=None)[0]
-    w.tofile(os.path.join(datadir, "cam2arm.csv"), sep=',')
+    w.tofile(os.path.join(rootdatadir, datadir, "cam2arm.csv"), sep=',')
 
-    eye = Detector(camera)
+    eye = Detector(camera, datadir=datadir)
 
     maxxd = 0
     maxyd = 0
@@ -188,7 +190,7 @@ def compute_and_verify(camera):
         time.sleep(2)
         print(eye.get_visual_target())
 
-def check_cam_arm_calibration(robot:Robot, camera):
+def check_cam_arm_calibration(robot:Robot, camera, datadir="data"):
     start_pose = Joints(0, -math.pi/2, math.pi/2, -math.pi/2, -math.pi/2, 0)
     out_position = Joints(-math.pi/2, -math.pi/2, math.pi/2, -math.pi/2, -math.pi/2, 0)
     robot.arm.move(start_pose, max_speed=1, max_acc=0.5)
@@ -203,11 +205,12 @@ def check_cam_arm_calibration(robot:Robot, camera):
     robot.hand.close()
 
     robot.arm.move(out_position, max_speed=1, max_acc=0.5)
-    eye = Detector(camera)
+    eye = Detector(camera, datadir=datadir)
 
     while True:
+        cam_pose = eye.get_visual_target(False)
         pose = eye.get_visual_target()
-        print(pose)
+        print(f"camera coords: {cam_pose},  arm coords: {pose}")
         robot.arm.move(neutral_pose, max_speed=1, max_acc=0.5)
         target_pose[0:3] = pose + [0,0,0.1]
         robot.arm.move(target_pose, max_speed=1, max_acc=0.5)
@@ -226,13 +229,14 @@ def check_cam_arm_calibration(robot:Robot, camera):
 if __name__ == '__main__':
     import mmky.k4a as k4a
     robot = connect(use_sim=False)
+    robot.open()
     camera = k4a.Camera(device_id=2)
     camera.start()
     try:
-        #calibrate_camera(robot, camera)
-        #compute_and_verify(camera)
+        # calibrate_camera(robot, camera, "data\\ws1", reset_bkground=True)
+        #compute_and_verify(camera, "data\\ws1")#
         #detector.debug()
-        check_cam_arm_calibration(robot, camera)
+        check_cam_arm_calibration(robot, camera, "data\\ws1")
     except KeyboardInterrupt:
         pass
     robot.disconnect()

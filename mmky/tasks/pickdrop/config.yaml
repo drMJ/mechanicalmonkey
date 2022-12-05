@@ -8,11 +8,8 @@ robot_init:
   grasp_mode: GraspMode.PINCH
   grasp_state: 60
 
+task_settings:
+  done_height: 0.08
+
 objects:
-  cube:
-    size: 0.04
-    kind: "cube"
-  cube:
-    size: 0.04
-    kind: "cube"
- 
+

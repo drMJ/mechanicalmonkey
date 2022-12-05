@@ -1,59 +1,33 @@
-from mmky.tasks.stack.stackreal import StackReal
-from mmky.tasks.stack.stacksim import StackSim
-from mmky import primitives
-from mmky.expert import Expert
+from mmky.expert import Expert, make_cmd
 import random
 import os
 
-GRASP_HEIGHT = 0.03
-MAX_ACC = 0.5
-MAX_SPEED = 0.5
+class StackExpert(Expert):
+    def run(self):
+         # pick a random cube as the target
+        target_id, source_id = random.sample(self.world.keys(), k=2)
 
-class StackingExpert(Expert):
-    def __init__(self):
-        super().__init__("robosuite_stack", StackSim, StackReal, os.path.join(os.path.dirname(__file__), 'config.yaml'))
+        # move over the cube
+        target = self.arm_state.tool_pose()
+        obj_pos = self.world[source_id]["position"]
+        target[:3] = obj_pos[:3] + [0, 0, self.pre_grasp_height]
+        yield make_cmd("reach", target=target, max_speed=self.max_speed, max_acc=self.max_acc)
+        yield make_cmd("pick", grasp_height=obj_pos[2] - self.grasp_depth, max_speed=self.max_speed, max_acc=self.max_acc)
 
-    def run(self, iterations=1, data_dir="trajectories"):
-        while iterations:
-            self._start_episode()
+        # move over the second cube
+        target = self.arm_state.tool_pose()
+        obj_pos = self.world[target_id]["position"]
+        target[:3] = obj_pos[:3] + [0, 0, self.pre_grasp_height*2]
+        yield make_cmd("reach", target=target, max_speed=self.max_speed, max_acc=self.max_acc)
+        yield make_cmd("place", release_height=obj_pos[2], max_speed=self.max_speed, max_acc=self.max_acc)
 
-            # pick a random cube as the target
-            target_id, source_id = random.sample(self.world.keys(), k=2)
-
-            # move over the cube
-            target = self.robot.tool_pose
-            target[:2] = self.world[source_id]["position"][:2]
-            if not self.robot.move(target, timeout=10, max_speed=MAX_SPEED, max_acc=MAX_ACC):
-                continue
-
-            # pick the cube
-            if not primitives.pick(self.robot, self.env.workspace_height + GRASP_HEIGHT, max_speed=MAX_SPEED, max_acc=MAX_ACC):
-                continue
-
-            # move over the second cube
-            target = self.robot.tool_pose
-            target[:2] = self.world[target_id]["position"][:2]
-            if not self.robot.move(target, timeout=10, max_speed=MAX_SPEED, max_acc=MAX_ACC):
-                continue
-
-            # place the cube
-            if not primitives.place(self.robot, self.env.workspace_height + GRASP_HEIGHT, max_speed=MAX_SPEED, max_acc=MAX_ACC):
-                continue
-
-            # check what happened
-            self._writer_enabled = False
-            self.env.scene.get_world_state(force_state_refresh=True)
-            self._writer_enabled = True
-
-            # make sure we get another observation
-            self.robot.stop()
-
-            # discard failed tries 
-            if not self.success:
-                continue
-            self._end_episode()
-            iterations -= 1
 
 if __name__ == '__main__':
-    exp = StackingExpert()
-    exp.run(1000)
+
+    from mmky.run import run, create_env
+    from mmky.env import ProtoSkillEnv
+    from mmky.tasks import StackReal
+    from mmky.writers import HDF5Writer
+    env = create_env(ProtoSkillEnv, StackReal, "ws1")
+    run(env, StackExpert(), HDF5Writer('stack_test'), 10)
+
