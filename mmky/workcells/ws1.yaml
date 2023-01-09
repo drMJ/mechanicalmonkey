@@ -24,6 +24,7 @@ cameras:
       type: k4a
       crop: [370,180, 512, 512]
       wired_sync_mode: 1 # MASTER
+      exposure: 5000
     sim:
       # cameraEyePosition: [-1.0, -0.8, 0.40]
       # cameraTargetPosition: [0, 0.2, 0]
@@ -36,6 +37,7 @@ cameras:
       crop: [270, 0, 640, 640]
       wired_sync_mode: 2 # SUBORDINATE
       subordinate_delay_off_master_usec: 200 # microsec
+      exposure: 5000
     sim:
       # cameraEyePosition: [-1.0, -0.8, 0.40]
       # cameraTargetPosition: [0, 0.2, 0]
@@ -47,7 +49,8 @@ cameras:
       type: k4a
       crop: [270, 0, 640, 640]
       wired_sync_mode: 2 # SUBORDINATE
-      subordinate_delay_off_master_usec: 200 # microsec
+      subordinate_delay_off_master_usec: 400 # microsec
+      exposure: 5000
     sim:
       # cameraEyePosition: [-1.0, -0.8, 0.40]
       # cameraTargetPosition: [0, 0.2, 0]

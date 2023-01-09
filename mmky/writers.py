@@ -4,7 +4,7 @@ import os
 import time
 import threading
 import pickle
-
+import cv2
 
 class Writer:
     def __init__(self, file_name_prefix="", file_name_ext="", file_path="trajectories"):
@@ -13,15 +13,13 @@ class Writer:
         self.path = file_path
         self.file_name_prefix = file_name_prefix
         self.file_name_ext = file_name_ext
-        self._writer_threads = {}
         self.episode_count = 0
+        self.writer_thread = None
 
     def close(self):
-        i = 0
-        for n, t in self._writer_threads.items():
-            print(f"Flushing {i} / {len(self._writer_threads)}: {n}")
-            t.join()
-            i += 1
+        if self.writer_thread:
+            self.writer_thread.join()
+            self.writer_thread = None
 
     def get_file_name(self):
         return os.path.join(self.path, f"{self.file_name_prefix}_{self.episode_count}_{time.time()}.{self.file_name_ext}")
@@ -37,28 +35,31 @@ class Writer:
         self.step += 1
 
     def end_episode(self, discard=False):
+        # wait for previous flush to finish
+        if self.writer_thread:
+            self.writer_thread.join()
+
         # flush to file
         f = self.get_file_name()
-        t = threading.Thread(target=self.thread_fn, args=(f, self.data))
-        t.start()
-        self._writer_threads[f] = t
+        self.writer_thread = threading.Thread(target=self.thread_fn, args=(f, self.data))
+        self.writer_thread.start()
         self.episode_count += 1
 
 class PickleWriter(Writer):
     def __init__(self, file_name_ext="pickle", **kwargs):
-        super().__init__(**kwargs)
-        self.thread_fn = PickleWriter.__write_file
+        super().__init__(file_name_ext="pickle", **kwargs)
+        self.thread_fn = PickleWriter._write_file
 
-    def __write_file(filename, data):
+    def _write_file(filename, data):
         # flush to file
         with open(filename, "wb") as f: 
             pickle.dump(data, f) 
         print("trajectory saved.")
 
 class HDF5Writer(Writer):
-    def __init__(self, file_name_ext="hdf5", **kwargs):
-        super().__init__(**kwargs)
-        self.thread_fn = HDF5Writer.__write_file
+    def __init__(self, **kwargs):
+        super().__init__(file_name_ext="hdf5", **kwargs)
+        self.thread_fn = HDF5Writer._write_file
 
     def __append(dest, src, ix, size):
         assert isinstance(src, dict)
@@ -82,24 +83,33 @@ class HDF5Writer(Writer):
                     dest[k].resize(len(dest[k]) + size, 0)
                 dest[k][ix] = v
 
-    def __write_file(filename, data):
+    def _write_file(filename, data):
         # flush to file
         with h5py.File(filename, 'w') as file:
             for i in range(len(data)):
                 HDF5Writer.__append(file, data[i], i, len(data))
-        print("trajectory saved.")
+        print(f"{filename} saved.")
 
+
+def convert_dir(dir):
+    while True:    
+        dir_entries = os.listdir(dir)
+        for entry in dir_entries:
+            entry = os.path.join(dir, entry)
+            if not os.path.isfile(entry):
+                continue
+
+            try:
+                with open(entry, "rb") as f: 
+                    data = pickle.load(f) 
+            except:
+                continue
+            print(f"Processing {entry}")
+            filename, _ = os.path.splitext(entry) 
+            filename += ".hdf5"
+            writer = HDF5Writer._write_file(filename, data)
+            os.remove(entry)
 
 if __name__ == '__main__':
-    writer = HDF5Writer("test")
-    obs = {
-            'cameras':np.zeros((100, 100)), 
-            'world':{"0":"zero"}, 
-            'arm':[0]*78, 
-            'action_completed': True,
-            'time': time.perf_counter()
-        }
-
-    writer.start_episode(obs)
-    writer.log({"cmd":"pick", "args":{"p1":0, "p1":1}}, obs, {})
-    writer.end_episode()
+    import sys
+    convert_dir(sys.argv[1])

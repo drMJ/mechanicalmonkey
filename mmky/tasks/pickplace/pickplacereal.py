@@ -1,6 +1,6 @@
 from mmky import RealScene
 
-class PickDropReal(RealScene):
+class PickPlaceReal(RealScene):
     def __init__(self, **kwargs):
         super().__init__(__file__, **kwargs)
         

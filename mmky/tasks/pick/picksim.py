@@ -1,6 +1,8 @@
 from mmky import SimScene
 from mmky import primitives
 
+#TODO:  OUTDATED
+
 class PickSim(SimScene):
     def __init__(self, robot, obs_res, workspace, cube_size=0.04, cube_count=1, cameras={}, **kwargs):
         super().__init__(robot, obs_res, workspace, cameras, **kwargs)

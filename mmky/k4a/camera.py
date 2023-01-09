@@ -108,3 +108,14 @@ class Camera:
         self.started = False
         self._device.stop_cameras()
 
+
+if __name__ == '__main__':
+    cam = Camera(device_id=0, max_depth=1500)
+    cam.start()
+    while cv2.waitKey(33) < 0:
+        capture = cam.get_capture()
+        depth_img = capture[2]
+        img = depth_img.astype(np.uint8)
+        cv2.imshow("Depth", img)
+
+    cam.stop()

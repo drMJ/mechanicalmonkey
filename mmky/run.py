@@ -4,7 +4,7 @@ from roman import Robot, GraspMode, Joints, Tool, JointSpeeds
 from roman.ur import arm
 from roman.rq import hand
 from mmky import RomanEnv, RealScene, SimScene
-from mmky.writers import HDF5Writer
+from mmky.writers import HDF5Writer, PickleWriter
 from mmky.tasks import *
 from mmky.env import RomanEnv, ProtoSkillEnv, MacroActionEnv
 import os
@@ -42,6 +42,13 @@ def create_parser():
         type=str,
         required=True,
         help="The type of gym environment to instantiate. Must resolve to imported env classes, e.g. RomanEnv, MacroActionEnv, ProtoSkillEnv")
+
+    parser.add_argument(
+        "-d",
+        "--dir",
+        type=str,
+        required=False,
+        help="The target directory for saved trajectories.")
 
     parser.add_argument(
         "-c",
@@ -110,6 +117,7 @@ def create_agent(agent):
 
 def run(env, agent, writer, episodes):
     for eix in range(episodes):
+        print(f"Episode {eix} ******************************")
         done = False
         agent.start_episode()
         obs = env.reset()
@@ -128,10 +136,11 @@ def parse_and_run():
     args = create_parser().parse_args()
     env = create_env(args.env, args.task, args.workcell, args.seed, not args.cpu_rendering, args.headless)
     agent = create_agent(args.agent)
-    writer = HDF5Writer(f"{args.task}_{args.env}_{args.agent}_{args.workcell}")
+    #writer = HDF5Writer(file_name_prefix=f"{args.task}_{args.env}_{args.agent}_{args.workcell}", file_path=args.dir)
+    writer = PickleWriter(file_name_prefix=f"{args.task}_{args.env}_{args.agent}_{args.workcell}", file_path=args.dir)
     run(env, agent, writer, args.episode_count)
 
 
 if __name__ == '__main__':
     parse_and_run()
-    # python run.py -w ws1 -a PickExpert -t PickReal -e ProtoSkillEnv -c 1000
+    # python run.py -w ws1 -a PickExpert -t PickReal -e ProtoSkillEnv -c 1000 -d "E:\mmky\trajectories\pick\" 

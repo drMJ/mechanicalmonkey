@@ -21,4 +21,7 @@ if __name__ == '__main__':
     from mmky.writers import HDF5Writer, PickleWriter
     env = create_env(ProtoSkillEnv, PickReal, "ws1")
     #run(env, PickExpert(), HDF5Writer('pick_test'), 10)
-    run(env, PickExpert(), PickleWriter('pick_test'), 10)
+    # python .\run.py -a PickExpert -e ProtoSkillEnv -w ws1 -t PickReal -c 1000 -d "E:\mmky\trajectories\pick\" 
+    run(env, PickExpert(), PickleWriter(file_name_prefix='pick_test'), 10)
+
+

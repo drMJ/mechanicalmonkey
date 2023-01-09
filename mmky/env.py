@@ -1,5 +1,6 @@
 import gym
 from gym.spaces import Box, Dict, Tuple
+import copy
 import numpy as np
 import random
 import time
@@ -100,13 +101,16 @@ class RomanEnv(gym.Env):
     def _observe(self, min_obs_delta=0):
         frames = self.scene.get_camera_captures(min_obs_delta)  
         world = self.scene.get_world_state()
-        self.robot.step() # refresh state, since camera captures can be blocking (i.e. can take significant time)
+        self.robot.step() # refresh state, since retrieving camera captures takes 5ms per camera
         state = self.robot.last_state()
         obs = {
             'cameras':frames, 
             'world':world, 
             'arm':state[0], 
             'hand':state[1],
+            'tool_pose': state[0].tool_pose(),
+            'joint_positions': state[0].joint_positions(),
+            'hand_position':state[1].position(),
             'action_completed': self.robot.is_done(),
             'robot_time': self.robot.arm.state.time(),
             'time': time.perf_counter()
@@ -133,23 +137,37 @@ class RomanEnv(gym.Env):
 
 class MacroActionEnv(RomanEnv):
     '''Performs goal-based macro-actions with dense observations.'''
+    _registered_action_macros = {'move_tool':primitives.move_tool, 'touch_tool':primitives.touch_tool}
+
+    def register_macro(action_name, action_generator):
+        _registered_macros[action_name] = action_generator
+
+    def step_from_macro(self, action):
+        if action['cmd'] not in MacroActionEnv._registered_action_macros:
+            action = copy.deepcopy(action)
+            action['args']['timeout'] = 0 
+        else:
+            action = MacroActionEnv._registered_action_macros[action['cmd']](*self.robot.last_state(), **action['args'])
+        return action
+    
     def reset(self):
-        self.__step = 0
+        self.__step_counter = 0
         return super().reset()
 
     def step(self, action, action_info=None, logger=None):
-        action_info = action_info or {}
-        action_info['macro_action'] = action.copy()
-        action_info['macro_action']["step"] = self.__step
-        timeout = action['args']['timeout'] 
-        action['args']['timeout'] = 0 #self.frame_rate or timeout
-        obs, rew, done, info = super().step(action, action_info)
-        endtime = timeout + obs['robot_time']
+        default_macro_timeout = 10
+        action_info = copy.deepcopy(action_info) if action_info else {}
+        action_info['macro_action'] = copy.deepcopy(action)
+        action_info['macro_action']["step"] = self.__step_counter
+        obs, cum_rew, done, info = super().step(self.step_from_macro(action), action_info, logger)
+        endtime = obs['robot_time'] + (action['args']['timeout'] if 'timeout' in action['args'] else default_macro_timeout)
         while not done and not obs['action_completed'] and obs['robot_time'] < endtime:
-            obs, rew, done, info = super().step(action, action_info, logger)
+            step_action = self.step_from_macro(action)
+            obs, rew, done, info = super().step(step_action, action_info, logger)
+            cum_rew += rew
         
-        self.__step += 1
-        return obs, rew, done, info
+        self.__step_counter += 1
+        return obs, cum_rew, done, info
 
 
 class ProtoSkillEnv(MacroActionEnv):
@@ -157,62 +175,62 @@ class ProtoSkillEnv(MacroActionEnv):
     skills = ['reach', 'pick', 'place', 'rotate', 'drop']
 
     def reset(self):
-        self.__step = 0
+        self.__step_counter = 0
         return super().reset()
 
     def step(self, action, action_info=None, logger=None):
-        action_info = action_info or {}
-        action_info['proto_skill'] = action.copy()
-        action_info['proto_skill']["step"] = self.__step
+        action_info = copy.deepcopy(action_info) if action_info else {}
+        action_info['proto_skill'] = copy.deepcopy(action)
+        action_info['proto_skill']["step"] = self.__step_counter
+        print(action_info)
         skill = ProtoSkillEnv.skills[action['cmd']] if isinstance(action['cmd'], int) else action['cmd']
         skill_fn = getattr(self, skill)
         args = action['args']
         
         for cmd in skill_fn(**args):
             obs, rew, done, info = super().step(cmd, action_info, logger)
-            done = done or not obs['action_completed']
             if done:
                 break
 
-        self.__step += 1
+        self.__step_counter += 1
         return obs, rew, done, info
 
     def reach(self, target, max_speed=0.5, max_acc=0.5):
         full_target = self.robot.tool_pose
         full_target[:3] = target[:3]
-        yield make_cmd('move', target=full_target, max_speed=max_speed, max_acc=max_acc, timeout=10)
+        yield make_cmd('move_tool', target=full_target, max_speed=max_speed, max_acc=max_acc)
 
     def rotate(self, yaw, max_speed=0.5, max_acc=0.5):
         target = self.robot.tool_pose.to_xyzrpy()
         target[5] = yaw
         target = Tool.from_xyzrpy(target)
-        yield make_cmd('move', target=target, max_speed=max_speed, max_acc=max_acc, timeout=10)
+        yield make_cmd('move_tool', target=target, max_speed=max_speed, max_acc=max_acc)
 
-    def pick(self, grasp_height, pre_grasp_size=60, contact_force_mult=2, max_speed=0.5, max_acc=0.5):
+    def pick(self, grasp_height, pre_grasp_size=60, max_speed=0.5, max_acc=0.5):
         back = self.robot.tool_pose
         pick_pose = back.clone()
         pick_pose[Tool.Z] = grasp_height
-        yield make_cmd('open', position=pre_grasp_size, timeout=10)
-        yield make_cmd('touch', target=pick_pose, max_speed=max_speed, max_acc=max_acc, contact_force_multiplier=contact_force_mult, timeout=10)
-        yield make_cmd('stop', timeout=10)
-        yield make_cmd('grasp', timeout=10)
-        yield make_cmd('move', target=back, max_speed=max_speed, max_acc=max_acc, timeout=10)
+        yield make_cmd('open', position=pre_grasp_size)
+        yield make_cmd('move_tool', target=pick_pose, max_speed=max_speed, max_acc=max_acc)
+        yield make_cmd('stop')
+        yield make_cmd('grasp')
+        yield make_cmd('move_tool', target=back, max_speed=max_speed, max_acc=max_acc)
 
-    def place(self, release_height, pre_grasp_size=60, contact_force_mult=2, max_speed=0.5, max_acc=0.5):
+    def place(self, target_height, pre_grasp_size=60, max_speed=0.5, max_acc=0.5):
+        back = self.robot.tool_pose
+        release_pose = back.clone()
+        release_pose[Tool.Z] = target_height
+        yield make_cmd('touch_tool', target=release_pose, max_speed=0.1, max_acc=max_acc)
+        yield make_cmd('stop')
+        yield make_cmd('release')
+        yield make_cmd('move_tool', target=back, max_speed=max_speed, max_acc=max_acc)
+
+    def drop(self, release_height, pre_grasp_size=60, max_speed=0.5, max_acc=0.5):
         back = self.robot.tool_pose
         release_pose = back.clone()
         release_pose[Tool.Z] = release_height
-        yield make_cmd('touch', target=release_pose, max_speed=0.1, max_acc=max_acc, contact_force_multiplier=contact_force_mult, timeout=10)
-        yield make_cmd('stop', timeout=10)
-        yield make_cmd('release', timeout=10)
-        yield make_cmd('move', target=back, max_speed=max_speed, max_acc=max_acc, timeout=10)
-
-    def drop(self, release_height, pre_grasp_size=60, contact_force_mult=2, max_speed=0.5, max_acc=0.5):
-        back = self.robot.tool_pose
-        release_pose = back.clone()
-        release_pose[Tool.Z] = release_height
-        yield make_cmd('touch', target=release_pose, max_speed=0.1, max_acc=max_acc, contact_force_multiplier=contact_force_mult, timeout=10)
-        yield make_cmd('stop', timeout=10)
-        yield make_cmd('release', timeout=10)
-        yield make_cmd('move', target=back, max_speed=max_speed, max_acc=max_acc, timeout=10)
+        yield make_cmd('move_tool', target=release_pose, max_speed=0.1, max_acc=max_acc)
+        yield make_cmd('stop')
+        yield make_cmd('release')
+        yield make_cmd('move_tool', target=back, max_speed=max_speed, max_acc=max_acc)
 

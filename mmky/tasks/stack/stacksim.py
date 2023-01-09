@@ -1,6 +1,8 @@
 from mmky import SimScene
 from mmky import primitives
 
+#TODO:  OUTDATED
+
 class StackSim(SimScene):
     def __init__(self, robot, obs_res, workspace, cube_size=0.05, cube_count=2, cameras={}, **kwargs):
         super().__init__(robot, obs_res, workspace, cameras, **kwargs)

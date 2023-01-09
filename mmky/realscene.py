@@ -52,6 +52,7 @@ class RealScene:
         self._world_state = None
 
         # create the robot instance
+        print("Starting robot")
         self.robot=Robot(use_sim=False, config=self.robot_init)
         self.connected = False
 
@@ -60,11 +61,13 @@ class RealScene:
         
     def start_cameras(self):
         # start on separate threads to not depend on config file ordering of cameras, when using wired sync 
+        print(f"Starting cameras {list(self.cameras.keys())}")
         threads = list(threading.Thread(target=cam.start) for cam in self.cameras.values())
         for t in threads:
             t.start()
         for t in threads:
             t.join()
+        print("Cameras started")
 
     def stop_cameras(self):
         for cam in self.cameras.values():

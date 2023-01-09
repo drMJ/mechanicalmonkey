@@ -1,0 +1,15 @@
+env:
+  max_steps: 500
+  random_start: True
+  obs_res: (256, 256)
+  obs_type: rgbd
+
+robot_init:
+  grasp_mode: GraspMode.PINCH
+  grasp_state: 60
+
+task_settings:
+  done_height: 0.08
+
+objects:
+
