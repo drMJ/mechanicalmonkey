@@ -101,8 +101,8 @@ class gamepad_or_keyboard():
 
 if __name__ == '__main__':
     use_sim=False
-    joint_gain = 0.15
-    pose_gain = 0.03
+    joint_gain = 0.25
+    pose_gain = 0.1
     third_person_pov = True
     gripper_moving = False
     xy_reference_angle = 0
@@ -136,11 +136,7 @@ if __name__ == '__main__':
     def move(target, max_force, duration=0.01, max_speed=1, max_acc=1):
         max_force = np.array(max_force)
         # perform the action
-        if use_sim:
-            # hack, move_rt doesn't yet work well in sim
-            robot.move(target, max_speed=max_speed, max_acc=max_acc, force_limit=(-max_force, max_force), timeout=0.0)
-        else:
-            robot.move_rt(target, duration=0.033, max_speed=max_speed, max_acc=max_acc, force_limit=(-max_force, max_force), timeout=0.0)
+        robot.move(target, max_speed=max_speed, max_acc=max_acc, force_limit=(-max_force, max_force), timeout=0.0)
 
     home = Joints(0, -math.pi / 2, math.pi / 2, -math.pi / 2, -math.pi / 2, 0)
     t0 = time.time()
@@ -240,7 +236,7 @@ if __name__ == '__main__':
 
         # Back btn exits
         done = keyboard.is_pressed('esc')
-        time.sleep(0.03)
+        #time.sleep(0.03)
         robot.step()
         if robot.arm.state.is_contact():
             print("Collision.")

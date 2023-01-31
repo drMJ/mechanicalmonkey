@@ -1,37 +1,27 @@
-from mmky.tasks.pick.pickreal import PickReal
-from mmky.tasks.pick.picksim import PickSim
-from mmky import primitives
-from mmky.expert import Expert
 import random
-import os
-
-PRE_GRASP_HEIGHT = 0.04
-GRASP_DEPTH = 0.02
-MAX_ACC = 0.5
-MAX_SPEED = 0.5
+from mmky.expert import Expert, make_cmd
 
 class PickExpert(Expert):
     def __init__(self):
-        super().__init__("roman_pick", PickSim, PickReal, os.path.join(os.path.dirname(__file__), 'config.yaml'))
+        super().__init__(grasp_depth=0.010, pre_grasp_height=0.080)
 
-    def run(self, iterations=1, data_dir="trajectories"):
-        while iterations:
-            self._start_episode()
+    def run(self):
+        # move over the cube
+        obj_ix = random.randint(0, len(self.world)-1)
+        obj_pos = self.world[obj_ix]["position"]
+        target = obj_pos[:3] + [0, 0, self.pre_grasp_height]
+        yield make_cmd("reach", target=target, max_speed=self.max_speed, max_acc=self.max_acc)
+        yield make_cmd("pick", grasp_height=obj_pos[2] - self.grasp_depth, max_speed=self.max_speed, max_acc=self.max_acc)
 
-            # move over the cube
-            target = self.robot.tool_pose
-            target[:3] = self.world[0]["position"][:3] + [0, 0, PRE_GRASP_HEIGHT]
-            if not self.robot.move(target, timeout=10, max_speed=MAX_SPEED, max_acc=MAX_ACC):
-                continue
-
-            # pick the cube
-            if not primitives.pick(self.robot, self.world[0]["position"][2] - GRASP_DEPTH, max_speed=MAX_SPEED, max_acc=MAX_ACC):
-                continue
-
-            # check what happened
-            if self._end_episode(force_state_refresh=True):
-               iterations -= 1 
 
 if __name__ == '__main__':
-    exp = PickExpert()
-    exp.run(1000)
+    from mmky.run import run, create_env
+    from mmky.env import ProtoSkillEnv
+    from mmky.tasks import PickReal
+    from mmky.writers import HDF5Writer, PickleWriter
+    env = create_env(ProtoSkillEnv, PickReal, "ws1")
+    #run(env, PickExpert(), HDF5Writer('pick_test'), 10)
+    # python .\run.py -a PickExpert -e ProtoSkillEnv -w ws1 -t PickReal -c 1000 -d "E:\mmky\trajectories\pick\" 
+    run(env, PickExpert(), PickleWriter(file_name_prefix='pick_test'), 10)
+
+

@@ -106,3 +106,29 @@ def generate_random_xy(min_angle_in_rad, max_angle_in_rad, min_dist, max_dist):
     angle = min_angle_in_rad + random.random() * (max_angle_in_rad - min_angle_in_rad)
     return [dist * math.cos(angle), dist * math.sin(angle)]
 
+
+def tool_space_action(cmd, arm_state, hand_state, target, duration, max_speed, max_acc, timeout, **kwargs):
+    args = {'max_speed': max_speed, 'max_acc': max_acc, 'timeout': 0}
+    args.update(kwargs)
+    current = arm_state.tool_pose()
+    offset = target[:3] - current[:3]
+    distance = np.linalg.norm(offset)
+    speed = np.linalg.norm(arm_state.tool_speed()[:3]) + 5 * max_acc * duration
+    time_to_decel = speed / max_acc
+    dist_to_decel = speed * time_to_decel / 2
+    step = max_speed * duration
+    min_dist = max(step, dist_to_decel)
+
+    if min_dist < distance:
+        fraction = step / distance
+        target = current.interpolate(target, fraction)
+        args['max_final_speed'] = max_speed
+    args['target'] = target
+
+    return {'cmd':cmd, 'args':args}
+
+def move_tool(arm_state, hand_state, target, duration=0.05, max_speed=0.3, max_acc=1, timeout=10):
+    return tool_space_action('move', arm_state, hand_state, target, duration, max_speed, max_acc, timeout)
+
+def touch_tool( arm_state, hand_state, target, duration=0.05, max_speed=0.3, max_acc=1, timeout=10):
+    return tool_space_action('touch', arm_state, hand_state, target, duration, max_speed, max_acc, timeout)

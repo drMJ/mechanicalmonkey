@@ -48,6 +48,7 @@ class PlaceReal(RealScene):
         ws = {}
         raw_state = super().get_world_state(force_state_refresh)
         for k,v in raw_state.items():
+            #TODO fix container critera
             if v["size"][2] > 0.06:
                 # this is a cup
                 ws["cup"] = v          
@@ -55,7 +56,7 @@ class PlaceReal(RealScene):
                 ws["obj"] = v             
         return ws
 
-    def eval_state(self, world_state):
+    def eval_state(self, obs):
         rew = 2 - len(world_state)
         success = rew == 1
         done = success

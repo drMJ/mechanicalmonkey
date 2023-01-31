@@ -5,6 +5,9 @@ import pybullet as pb
 from mmky import SimScene
 from mmky import primitives
 
+
+#TODO:  OUTDATED
+
 class PlaceSim(SimScene):
     def __init__(self, robot, obs_res, workspace, obj_size=0.05, obj_kind="box", rand_colors=False, rand_textures=False, cameras={}, **kwargs):
         super().__init__(robot, obs_res, workspace, cameras, **kwargs)

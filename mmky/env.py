@@ -1,9 +1,12 @@
 import gym
 from gym.spaces import Box, Dict, Tuple
+import copy
 import numpy as np
 import random
+import time
 import torch
-from roman import Robot, GraspMode, Joints, Tool, JointSpeeds
+import types
+from roman import Joints, Tool, JointSpeeds
 from roman.ur import arm
 from roman.rq import hand
 from mmky.realscene import RealScene
@@ -12,192 +15,222 @@ from mmky import primitives
 import cv2
 import yaml
 
-MAX_OBJECTS_IN_SCENE = 10
+def make_cmd(name, **args):
+    return {'cmd':name, 'args':args}
 
 class RomanEnv(gym.Env):
-    def __init__(self, simscenefn=SimScene, realscenefn=RealScene, config={}, full_state_writer=None):
-        super().__init__()
-        if type(config) is str:
-            with open(config) as f:
-                config = yaml.safe_load(f)
-        self.config = config
-        use_sim = config.get("use_sim", True)
-        robot_config = config.get("robot", {})
-        instance_key = None
-        if not robot_config.get("sim.use_gui", True):
-            # using an instance key allows multiple env instances (each with a robot/pybullet process) on the same machine
-            instance_key = random.randint(0, 0x7FFFFFFF)
-            robot_config["sim.instance_key"] = instance_key
-        self.home_pose = config.get("start_position", None)
-        if self.home_pose:
-            self.home_pose = eval(self.home_pose)
-            if not isinstance(self.home_pose, Joints):
-                raise ValueError(f"The value provided for the configuration entry 'start_position' is invalid: {self.home_pose} is not an instance of Joints type.")
-            robot_config["sim.start_config"] = self.home_pose.array
-        self.robot = Robot(use_sim=use_sim, config=robot_config, writer=full_state_writer)
-        self.obs_res = config.get("obs_res", (84, 84))
-        ws = config.get("workspace", {"radius": [0.5, 0.75], "span": [3.5, 4.2], "height": 0})
-        self.workspace_radius, self.workspace_span, self.workspace_height = ws.values()
-        scene_fn, scene_cfg = (simscenefn, "sim_scene") if use_sim else (realscenefn, "real_scene")
-        scene_config = config.get(scene_cfg, {})
-        self.scene = scene_fn(robot=self.robot, obs_res=self.obs_res, workspace=ws, instance_key=instance_key, **scene_config)
-        self.robot.connect()
-        self.scene.connect()
-        self.render_mode = config.get("render_mode", None)
-        self.max_steps = config.get("max_steps", -1)
-        self.grasp_mode = config.get("grasp_mode", None)
-        self.grasp_mode = eval(self.grasp_mode) if self.grasp_mode else GraspMode.BASIC
-        self.grasp_state = config.get("grasp_state", 0)
-        self.random_start = config.get("random_start", False)
+    '''Base class for real and simulated environments. '''
+    commands = ['stop', 'move', 'move_rt', 'touch', 'grasp', 'release']
 
-        camera_count = self.scene.get_camera_count()
-        self.observation_space = Dict({
-            "cameras": Tuple(camera_count * [Box(low=0, high=255, shape=(self.obs_res[0], self.obs_res[1], 3), dtype=np.uint8)]),
-            "world": Box(low=-2, high=2, shape=(MAX_OBJECTS_IN_SCENE,)),
-            "arm_state": Box(low=-np.inf, high=np.inf, shape=(arm.State._BUFFER_SIZE,)),
-            "hand_state": Box(low=-np.inf, high=np.inf, shape=(hand.State._BUFFER_SIZE,)),
-            "last_arm_cmd": Box(low=-np.inf, high=np.inf, shape=(arm.Command._BUFFER_SIZE,)),
-            "last_hand_cmd": Box(low=-np.inf, high=np.inf, shape=(hand.Command._BUFFER_SIZE,))})
+    def __init__(self, scene, seed=None, max_steps=500, random_start=True, obs_res=[256,256], obs_type='rgbd', obs_fps=30):
+        super().__init__()
+        self.scene = scene
+        
+        if seed:
+            RomanEnv.set_seed(seed)
+        self.max_steps = max_steps
+        self.random_start = random_start
+        self.obs_res = obs_res
+        self.obs_type = obs_type
+        self.camera_count = self.scene.get_camera_count()
+        self.robot = scene.robot
+        self.frame_rate = 1/obs_fps
+        self.render_mode = 'human'
+        self.fps = 0
 
     def close(self):
-        self.scene.disconnect()
+        self.scene.close()
         self.scene = None
-        self.robot.disconnect()
-        self.robot = None
 
-    def seed(seed=None):
-        """Sets the seed for this env's random number generator."""
+    def set_seed(seed=None):
+        '''Sets the seed for this env's random number generator.'''
         np.random.seed(seed)
         random.seed(seed)
         torch.manual_seed(seed)
 
-    def reset(self, **kwargs):
+    def reset(self):
         self.step_count = 0
         self.total_reward = 0
-        self.is_done = False
-        self.success = False
-        if isinstance(self.home_pose, Joints):
-            joints = self.home_pose or self.robot.joint_positions
-            if not self.robot.move(joints, max_speed=0.5, max_acc=0.5, timeout=5):
-                raise Exception(f"Home pose {joints} could not be reached. Motion timed out at {self.robot.last_state().joint_positions()}")
-            self.home_pose = self.robot.tool_pose
-        elif not self.home_pose:
-            self.home_pose = self.robot.tool_pose
-        self.scene.reset(home_pose=self.home_pose, **kwargs)
-        self.robot.set_hand_mode(self.grasp_mode)
-        self.robot.grasp(self.grasp_state)
-        if self.random_start:
-            self.home_pose[:2] = primitives.generate_random_xy(*self.workspace_span, *self.workspace_radius)
-            if not self.robot.move(self.home_pose, max_speed=0.5, max_acc=0.5, timeout=5):
-                self.robot.stop() # this pose is as good as any
-        return self._observe()
+        self.scene.reset(self.random_start)
+        self._last_obs = self._observe()
+        self._last_action = None
+        return self._last_obs
 
-    def end_episode(self, success=True):
-        self.is_done = True
-        self.success = success
-        #self.scene.end_episode()
-
-    def step(self, action):
-        self.info = {}
-        force_state_refresh = self._act(action)
-        obs = self._observe(force_state_refresh)
-        rew, success, done = self._eval_state(obs)
-        done = done or self.is_done or self.step_count >= self.max_steps
-        self.info["success"] = self.success or success
-        self.step_count += 1
-        self.info["step_count"] = self.step_count
+    def step(self, action, action_info=None, logger=None):
+        info={}
+        self.robot.start_trace()
+        self._act(action)
+        # while not self.robot.is_done() and self.robot.arm.state.time() - self._last_obs["robot_time"] < self.frame_rate:
+        #     self._act(action)
+        info['action_trace'] = self.robot.end_trace()
+        if action_info:
+            info['action_info'] = action_info
+        self._last_obs = self._observe(time.perf_counter() - self._last_obs["time"] )
+        rew, success, done = self.scene.eval_state(self._last_obs)
+        info['success'] = success
+        done = done or self.step_count >= self.max_steps 
+        info['done'] = done
+        
+        info['step_count'] = self.step_count
         self.total_reward += rew
-        self.info["total_reward"] = self.total_reward
+        info['reward'] = rew
+        info['total_reward'] = self.total_reward
         self.render(self.render_mode)
-        return obs, rew, done, self.info
+        if logger:
+            logger(action, self._last_obs, info)
+        self.step_count += 1
+        return self._last_obs, rew, done, info
 
     def render(self, mode='human'):
-        img = self._last_state["cameras"][0]
-        if mode == 'rgb_array':
-            return img
-        elif mode == 'human':
-            cv2.imshow("camera observation", img)
+        if not self.step_count:
+            self.episode_start_time = time.perf_counter()
+            fps = 30
+        else:
+            fps = self.step_count / (time.perf_counter()- self.episode_start_time)
+        if mode == 'human':
+            #rgb = self._last_obs['cameras']['right_cam'][1]
+            rgb = np.concatenate(list(capture["color"] for capture in self._last_obs['cameras'].values()), axis = 1)
+            cv2.putText(rgb, f'{fps:.1f}' , (0, 220), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+            depth = np.concatenate(list(capture["depth"] for capture in self._last_obs['cameras'].values()), axis = 1).astype(np.uint8)
+            cv2.imshow('rgb observation', rgb)
+            cv2.imshow('depth observation', depth)
             cv2.waitKey(1)
-
-    def _observe(self, force_state_refresh=False):
-        images = self._get_camera_images()
-        world = self._get_world_state(force_state_refresh)
-        proprio = self._get_proprioceptive_state()
-        self._last_state = RomanEnv.make_observation(images, world, proprio)
-        return self._last_state
-
-    @staticmethod
-    def make_observation(images, world, proprio):
-        arm_state, hand_state, arm_cmd, state_cmd = proprio
-        return {
-            "cameras": images,
-            "world": world,
-            "arm_state": arm_state,
-            "hand_state": hand_state,
-            "last_arm_cmd": arm_cmd,
-            "last_hand_cmd": state_cmd}
-
-    def _get_camera_images(self):
-        return self.scene.get_camera_images() # this is blocking
-
-    def _get_world_state(self, force_state_refresh=False):
-        return self.scene.get_world_state(force_state_refresh)
-
-    def _get_proprioceptive_state(self):
-        #self.robot.step() # update the proprioceptive state without interrupting the motion or overriding the commands
-        arm_state, hand_state = self.robot.last_state()
-        arm_cmd, hand_cmd = self.robot.last_command()
-        return arm_state, hand_state, arm_cmd, hand_cmd
+        elif mode == 'video':
+            return (capture["color"] for capture in self._last_obs['cameras'].values())
+    
+    def _observe(self, min_obs_delta=0):
+        frames = self.scene.get_camera_captures(min_obs_delta)  
+        world = self.scene.get_world_state()
+        self.robot.step() # refresh state, since retrieving camera captures takes 5ms per camera
+        state = self.robot.last_state()
+        obs = {
+            'cameras':frames, 
+            'world':world, 
+            'arm':state[0], 
+            'hand':state[1],
+            'tool_pose': state[0].tool_pose(),
+            'joint_positions': state[0].joint_positions(),
+            'hand_position':state[1].position(),
+            'action_completed': self.robot.is_done(),
+            'robot_time': self.robot.arm.state.time(),
+            'time': time.perf_counter()
+        }
+        return obs
 
     def _act(self, action):
-        # must be provided by derived classes or externalized to an expert
-        return False # don't force_state_refresh
+        if action is None:
+            return 
+        if action == self._last_action:
+            self.robot.step()
+            return
+        self._last_action = action
+        if isinstance(action['cmd'], types.MethodType):
+            cmd_fn = action['cmd']
+        else:
+            cmd_name = action['cmd'] if isinstance(action['cmd'], str) else RomanEnv.commands[action['cmd']] 
+            try:
+                cmd_fn = getattr(self.robot, cmd_name)
+            except:
+                raise Exception(f'Invalid action name or id {cmd_name}. Valid names are {RomanEnv.commands}.')
+        cmd_fn(**action['args'])
 
-    def _eval_state(self, obs):
-        return self.scene.eval_state(obs["world"])
+
+class MacroActionEnv(RomanEnv):
+    '''Performs goal-based macro-actions with dense observations.'''
+    _registered_action_macros = {'move_tool':primitives.move_tool, 'touch_tool':primitives.touch_tool}
+
+    def register_macro(action_name, action_generator):
+        _registered_macros[action_name] = action_generator
+
+    def step_from_macro(self, action):
+        if action['cmd'] not in MacroActionEnv._registered_action_macros:
+            action = copy.deepcopy(action)
+            action['args']['timeout'] = 0 
+        else:
+            action = MacroActionEnv._registered_action_macros[action['cmd']](*self.robot.last_state(), **action['args'])
+        return action
+    
+    def reset(self):
+        self.__step_counter = 0
+        return super().reset()
+
+    def step(self, action, action_info=None, logger=None):
+        default_macro_timeout = 10
+        action_info = copy.deepcopy(action_info) if action_info else {}
+        action_info['macro_action'] = copy.deepcopy(action)
+        action_info['macro_action']["step"] = self.__step_counter
+        obs, cum_rew, done, info = super().step(self.step_from_macro(action), action_info, logger)
+        endtime = obs['robot_time'] + (action['args']['timeout'] if 'timeout' in action['args'] else default_macro_timeout)
+        while not done and not obs['action_completed'] and obs['robot_time'] < endtime:
+            step_action = self.step_from_macro(action)
+            obs, rew, done, info = super().step(step_action, action_info, logger)
+            cum_rew += rew
+        
+        self.__step_counter += 1
+        return obs, cum_rew, done, info
 
 
-class RoboSuiteEnv(RomanEnv):
-    def __init__(self, simscenefn=SimScene, realscenefn=RealScene, config={}):
-        super().__init__(simscenefn=simscenefn  , realscenefn=realscenefn, config=config)
-        self.action_space = Box(low=-1, high=1, shape=(7,))
-        self.observation_space = Dict({
-            "image": Box(low=0, high=255, shape=(self.obs_res[0], self.obs_res[1], 3), dtype=np.uint8),
-            "proprio": Box(low=-np.inf, high=np.inf, shape=(37,))})
+class ProtoSkillEnv(MacroActionEnv):
+    '''Uses an action space of open-loop skills, like reach, pick etc.'''
+    skills = ['reach', 'pick', 'place', 'rotate', 'drop']
 
-    def reset(self, **kwargs):
-        self.__last_hand_target = 1
-        return super().reset(**kwargs)
+    def reset(self):
+        self.__step_counter = 0
+        return super().reset()
 
-    def _act(self, action):
-        self.robot.move(JointSpeeds(*action[:6]), max_speed=1, max_acc=0.5, timeout=0)
-        if action[6] != self.__last_hand_target:
-            self.__last_hand_target = action[6]
-            pos = min(255, max(action[6] * 255, 0))
-            self.robot.grasp(position=pos, timeout=0)
-        return False
+    def step(self, action, action_info=None, logger=None):
+        action_info = copy.deepcopy(action_info) if action_info else {}
+        action_info['proto_skill'] = copy.deepcopy(action)
+        action_info['proto_skill']["step"] = self.__step_counter
+        print(action_info)
+        skill = ProtoSkillEnv.skills[action['cmd']] if isinstance(action['cmd'], int) else action['cmd']
+        skill_fn = getattr(self, skill)
+        args = action['args']
+        
+        for cmd in skill_fn(**args):
+            obs, rew, done, info = super().step(cmd, action_info, logger)
+            if done:
+                break
 
-    def _observe(self, force_state_refresh=False):
-        obs = super()._observe(force_state_refresh)
-        return RoboSuiteEnv.make_observation(obs)
+        self.__step_counter += 1
+        return obs, rew, done, info
 
-    @staticmethod
-    def make_observation(obs):
-        joint_pos_cos = np.cos(obs["arm_state"].joint_positions())
-        joint_pos_sin = np.sin(obs["arm_state"].joint_positions())
-        joint_vel = obs["arm_state"].joint_speeds()
-        eef = obs["arm_state"].tool_pose()
-        eef_pos = eef.position()
-        eef_quat = eef.orientation()
-        gripper_qpos = [obs["hand_state"].position_A(), 0, obs["hand_state"].position_B(), 0, obs["hand_state"].position_C(), 0]
-        gripper_qvel = [0, 0, 0, 0, 0, 0]
-        return {"image": obs["cameras"][0],
-                "world": obs["world"],
-                "proprio": np.concatenate((joint_pos_cos,
-                                          joint_pos_sin,
-                                          joint_vel,
-                                          eef_pos,
-                                          eef_quat,
-                                          gripper_qpos,
-                                          gripper_qvel))}
+    def reach(self, target, max_speed=0.5, max_acc=0.5):
+        full_target = self.robot.tool_pose
+        full_target[:3] = target[:3]
+        yield make_cmd('move_tool', target=full_target, max_speed=max_speed, max_acc=max_acc)
+
+    def rotate(self, yaw, max_speed=0.5, max_acc=0.5):
+        target = self.robot.tool_pose.to_xyzrpy()
+        target[5] = yaw
+        target = Tool.from_xyzrpy(target)
+        yield make_cmd('move_tool', target=target, max_speed=max_speed, max_acc=max_acc)
+
+    def pick(self, grasp_height, pre_grasp_size=60, max_speed=0.5, max_acc=0.5):
+        back = self.robot.tool_pose
+        pick_pose = back.clone()
+        pick_pose[Tool.Z] = grasp_height
+        yield make_cmd('open', position=pre_grasp_size)
+        yield make_cmd('move_tool', target=pick_pose, max_speed=max_speed, max_acc=max_acc)
+        yield make_cmd('stop')
+        yield make_cmd('grasp')
+        yield make_cmd('move_tool', target=back, max_speed=max_speed, max_acc=max_acc)
+
+    def place(self, target_height, pre_grasp_size=60, max_speed=0.5, max_acc=0.5):
+        back = self.robot.tool_pose
+        release_pose = back.clone()
+        release_pose[Tool.Z] = target_height
+        yield make_cmd('touch_tool', target=release_pose, max_speed=0.1, max_acc=max_acc)
+        yield make_cmd('stop')
+        yield make_cmd('release')
+        yield make_cmd('move_tool', target=back, max_speed=max_speed, max_acc=max_acc)
+
+    def drop(self, release_height, pre_grasp_size=60, max_speed=0.5, max_acc=0.5):
+        back = self.robot.tool_pose
+        release_pose = back.clone()
+        release_pose[Tool.Z] = release_height
+        yield make_cmd('move_tool', target=release_pose, max_speed=0.1, max_acc=max_acc)
+        yield make_cmd('stop')
+        yield make_cmd('release')
+        yield make_cmd('move_tool', target=back, max_speed=max_speed, max_acc=max_acc)
 

@@ -1,0 +1,70 @@
+robot:
+  arm_type: ur5e
+  hand_type: rq3
+  arm_ip: 192.168.1.2
+  hand_ip: 192.168.1.11
+  local_ip: 192.168.1.9
+  local_port: 50003
+
+workspace:
+  radius_range: [-0.45, -0.75]
+  angular_range: [-0.4, 0.4]
+  height: -0.1
+  start_position: Joints(0,-1.57, 1.57, -1.57, -1.57, 0)
+  out_position: Joints(-1.57,-1.57, 1.57, -1.57, -1.57, 0)
+
+detector:
+  camera: overhead_cam
+  datadir: data\ws1
+
+cameras:
+  overhead_cam:
+    real:
+      device_id: 2
+      type: k4a
+      crop: [370,180, 512, 512]
+      wired_sync_mode: 1 # MASTER
+      exposure: 5000
+    sim:
+      # cameraEyePosition: [-1.0, -0.8, 0.40]
+      # cameraTargetPosition: [0, 0.2, 0]
+      # cameraUpVector: [0, 0, 1]
+      # fov: 59
+  right_cam:
+    real:
+      device_id: 0
+      type: k4a
+      crop: [270, 0, 640, 640]
+      wired_sync_mode: 2 # SUBORDINATE
+      subordinate_delay_off_master_usec: 200 # microsec
+      exposure: 5000
+    sim:
+      # cameraEyePosition: [-1.0, -0.8, 0.40]
+      # cameraTargetPosition: [0, 0.2, 0]
+      # cameraUpVector: [0, 0, 1]
+      # fov: 59
+  left_cam:
+    real:
+      device_id: 1
+      type: k4a
+      crop: [270, 0, 640, 640]
+      wired_sync_mode: 2 # SUBORDINATE
+      subordinate_delay_off_master_usec: 400 # microsec
+      exposure: 5000
+    sim:
+      # cameraEyePosition: [-1.0, -0.8, 0.40]
+      # cameraTargetPosition: [0, 0.2, 0]
+      # cameraUpVector: [0, 0, 1]
+      # fov: 59
+  
+  palm_cam:
+    real:
+      device_id: 0
+      type: realsense
+      crop: [280, 0, 720, 720]
+    sim:
+      # linkid: id_of_camdef_in_urdf
+      # cameraEyePosition: [-1.0, -0.8, 0.40]
+      # cameraTargetPosition: [0, 0.2, 0]
+      # cameraUpVector: [0, 0, 1]
+      # fov: 59
