@@ -28,7 +28,7 @@ class Camera:
             self.depth_enabled = True
             depth_sensor = device.first_depth_sensor()
             depth_scale = depth_sensor.get_depth_scale()
-            depth_sensor.set_option(rs.option.depth_units, 0.001) 
+            depth_sensor.set_option(rs.option.depth_units, 0.001) # in mm
             depth_scale = depth_sensor.get_depth_scale()
 
         exposure = kwargs.get("exposure", 0)

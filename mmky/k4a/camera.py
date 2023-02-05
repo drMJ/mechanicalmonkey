@@ -47,6 +47,7 @@ class Camera:
         self._transformed_depth = Image.create(EImageFormat.DEPTH16, resolution[0], resolution[1], resolution[0]*2)
         self.crop = kwargs.get("crop", (0, 0, resolution[0], resolution[1]))
         self.started = False
+        self.bgra_tmp = None
         
     def __del__(self):
         if self.started:
@@ -83,8 +84,9 @@ class Camera:
 
         # crop and resize color and depth images
         res = color.shape[:2][::-1] if color is not None else res or self.default_res
-        cropped = capture["color"][self.crop[1]:self.crop[1]+self.crop[3], self.crop[0]:self.crop[0]+self.crop[2], :3]
-        color = cv2.resize(cropped, res, dst=color, interpolation=cv2.INTER_AREA)
+        cropped = capture["color"][self.crop[1]:self.crop[1]+self.crop[3], self.crop[0]:self.crop[0]+self.crop[2], :]
+        self.bgra_tmp = cv2.resize(cropped, res, dst=self.bgra_tmp, interpolation=cv2.INTER_AREA)
+        color = cv2.cvtColor(self.bgra_tmp, dst=color, code=cv2.COLOR_BGRA2RGB)
         if capture["depth"] is not None:
             if depth is None:
                 depth = np.empty((res[1], res[0]), dtype=np.uint16)

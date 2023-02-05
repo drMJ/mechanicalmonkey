@@ -20,7 +20,7 @@ def make_cmd(name, **args):
 
 class RomanEnv(gym.Env):
     '''Base class for real and simulated environments. '''
-    commands = ['stop', 'move', 'move_rt', 'touch', 'grasp', 'release']
+    commands = ['stop', 'move', 'touch', 'grasp', 'open', 'release', 'pinch']
 
     def __init__(self, scene, seed=None, max_steps=500, random_start=True, obs_res=[256,256], obs_type='rgbd', obs_fps=30):
         super().__init__()
