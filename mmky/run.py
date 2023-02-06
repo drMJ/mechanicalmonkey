@@ -6,6 +6,7 @@ from roman.rq import hand
 from mmky import RomanEnv, RealScene, SimScene
 from mmky.writers import HDF5Writer, PickleWriter
 from mmky.tasks import *
+from mmky.simpleagent import SimpleAgent
 from mmky.env import RomanEnv, ProtoSkillEnv, MacroActionEnv
 import os
 import yaml
