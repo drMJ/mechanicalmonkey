@@ -116,7 +116,7 @@ if __name__ == '__main__':
     cam.start()
     while cv2.waitKey(33) < 0:
         capture = cam.get_capture()
-        depth_img = capture[2]
+        depth_img = capture['depth']
         img = depth_img.astype(np.uint8)
         cv2.imshow("Depth", img)
 

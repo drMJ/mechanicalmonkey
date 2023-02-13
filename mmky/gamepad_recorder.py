@@ -186,7 +186,7 @@ if __name__ == '__main__':
 
             dz = pose_gain * -gk.r_thumb_y()
             (x, y, z) = robot.arm.state.tool_pose()[:3] + [dx, dy, dz]
-            target = Tool.from_array([x, y, z, roll, pitch, yaw])
+            target = Tool.from_xyzrpy([x, y, z, roll, pitch, yaw])
             move(target, force)
             (x, y, z) = robot.arm.state.tool_pose()[:3]
         else:

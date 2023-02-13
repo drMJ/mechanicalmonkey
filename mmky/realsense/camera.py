@@ -97,3 +97,15 @@ class Camera:
     def stop(self):
         self.started = False
         self.pipeline.stop()
+
+
+if __name__ == '__main__':
+    cam = Camera(device_id=0)
+    cam.start()
+    while cv2.waitKey(33) < 0:
+        capture = cam.get_capture()
+        depth_img = capture['depth']
+        img = depth_img.astype(np.uint8)
+        cv2.imshow("Depth", img)
+
+    cam.stop()
