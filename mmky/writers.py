@@ -27,7 +27,7 @@ class Writer:
     def start_episode(self, observation):
         self.step = 0
         self.data = [{"observation":observation, 'action':{}, 'info':{}}]
-
+         
     def log(self, action, observation, info):
         self.data[self.step]['action'] = action
         self.data[self.step]['info'] = info
@@ -110,6 +110,55 @@ def convert_dir(dir):
             writer = HDF5Writer._write_file(filename, data)
             os.remove(entry)
 
+def fix_dir(dir):
+    import roman
+    import cv2
+    print(f"processing {dir}")
+    dir_entries = os.listdir(dir)
+    for entry in dir_entries:
+        entry = os.path.join(dir, entry)
+        if not os.path.isfile(entry):
+            continue
+
+        filename, ext = os.path.splitext(entry) 
+        try:
+            data = h5py.File(entry, 'r+')
+        except Exception as e:
+            print(f"Skipping {entry}: {e}")
+            continue
+        
+        print(f"Converting {entry}")
+
+        # convert to rgb
+        for cam_name in ['left_cam', 'overhead_cam', 'right_cam']:
+            print(cam_name) 
+            cam = data['observation']['cameras'][cam_name]['color']
+            for i in range(len(cam)):   
+                cam[i, :, :, :] = cv2.cvtColor(cam[i], code=cv2.COLOR_BGR2RGB)
+
+        # add metadata
+        data["meta/task"] = ['pick']
+        data["meta/arm"] = ['Universal Robots UR5e']
+        data["meta/force_torque_sensor"] = ['builtin']
+        data["meta/gripper"] = ['Robotiq 3-Finger Gripper']
+        data["meta/cameras"] = ['AzureKinect', 'AzureKinect', 'RealSense D405', 'AzureKinect']
+        data["meta/fps"] = [30]
+        data["meta/resolution"] = [256, 256]
+        data["meta/color_format"] = ['RGB']
+        data["meta/color_range"] = [0, 255]
+        data["meta/depth_unit"] = ['mm']
+        data["meta/tool_pose_format"] = ['x, y, z, rx, ry, rz']
+        data["meta/tool_pose_angle_format"] = ['axis angle']
+        data["meta/tool_pose_abs_limit"] = [1, 1, 1, 2*np.pi, 2*np.pi, 2*np.pi]
+        data["meta/joint_positions_format"] = ['[base shoulder elbow wrist1 wrist2 wrist3]']
+        data["meta/joint_positions_abs_limit"] = [2*np.pi, 2*np.pi, 2*np.pi, 2*np.pi, 2*np.pi, 2*np.pi]
+        data["meta/hand_position_range"] = [0, 255]
+        data["meta/hand_position_format"] = ['0 => fully opened, 255 => fully closed']
+        data["meta/possible_actions"] = ["stop", "move", "touch", "open", "release", "grasp", "pinch"]
+
+        data.flush()
+
 if __name__ == '__main__':
     import sys
+    #fix_dir(sys.argv[1])
     convert_dir(sys.argv[1])
