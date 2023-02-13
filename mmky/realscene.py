@@ -116,4 +116,4 @@ class RealScene:
         if not self.workspace.check_bounds(obs["arm"]):
             print("Arm reached workspace bounds.")
             return 0, False, True
-        self.eval_state(obs)
+        return self.eval_state(obs)
