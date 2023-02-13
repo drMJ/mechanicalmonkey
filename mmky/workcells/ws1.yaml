@@ -7,9 +7,9 @@ robot:
   local_port: 50003
 
 workspace:
-  radius_range: [-0.45, -0.75]
-  angular_range: [-0.4, 0.4]
-  height: -0.1
+  radius_range: [0.35, 0.85]
+  angular_range: [-0.5, 0.25]
+  height_range: [-0.1, 0.3]
   start_position: Joints(0,-1.57, 1.57, -1.57, -1.57, 0)
   out_position: Joints(-1.57,-1.57, 1.57, -1.57, -1.57, 0)
 
