@@ -101,8 +101,8 @@ class gamepad_or_keyboard():
 
 if __name__ == '__main__':
     use_sim=False
-    joint_gain = 0.25
-    pose_gain = 0.1
+    joint_gain = 0.05
+    pose_gain = 0.01
     third_person_pov = True
     gripper_moving = False
     xy_reference_angle = 0
@@ -140,6 +140,7 @@ if __name__ == '__main__':
 
     home = Joints(0, -math.pi / 2, math.pi / 2, -math.pi / 2, -math.pi / 2, 0)
     t0 = time.time()
+    (x, y, z, roll, pitch, yaw) = robot.arm.state.tool_pose().to_xyzrpy()
     while not done:
         #print(time.time()-t0)
         t0 = time.time()
@@ -150,7 +151,8 @@ if __name__ == '__main__':
             xy_reference_angle = robot.arm.state.joint_positions()[Joints.BASE]
         force = force_limit_override if gk.button_pressed(THUMB_STICK_PRESS_RIGHT) else force_limit_default
         if gk.button_pressed(BTN_MENU):
-            move(home, force)
+            move(home, force, max_speed=0.5, max_acc=0.5)
+            (x, y, z, roll, pitch, yaw) = robot.arm.state.tool_pose().to_xyzrpy()
         elif gk.button_pressed(BTN_SHOULDER_RIGHT):
             # wrist control in joint positions. Direction is optimized for the gripper-down position
 
@@ -163,17 +165,17 @@ if __name__ == '__main__':
                 wrist3 = -wrist3
 
             target = robot.arm.state.joint_positions() + joint_gain * np.array([0, 0, 0, wrist1, wrist2, wrist3])
-            norm = np.linalg.norm([wrist1, wrist2, wrist3])
             move(target, force)
+            (x, y, z, roll, pitch, yaw) = robot.arm.state.tool_pose().to_xyzrpy()
         elif gk.button_pressed(BTN_SHOULDER_LEFT):
             # wrist control, roll/pitch/yaw
-            roll = gk.l_thumb_x()
-            pitch = -gk.r_thumb_y()
-            yaw = gk.r_thumb_x()
-            target = robot.arm.state.tool_pose().to_xyzrpy() + joint_gain * np.array([0, 0, 0, roll, pitch, yaw])
-            target = Tool.from_xyzrpy(target)
-            norm = np.linalg.norm([roll, pitch, yaw])
+            d_roll = gk.l_thumb_x()
+            d_pitch = -gk.r_thumb_y()
+            d_yaw = gk.r_thumb_x()
+            (roll, pitch, yaw) = robot.arm.state.tool_pose().to_xyzrpy()[3:] + joint_gain * np.array([d_roll, d_pitch, d_yaw])
+            target = Tool.from_xyzrpy([x, y, z, roll, pitch, yaw])
             move(target, force)
+            (roll, pitch, yaw) = robot.arm.state.tool_pose().to_xyzrpy()[3:]
         elif gk.button_pressed(DPAD_DOWN) or gk.button_pressed(DPAD_LEFT) or gk.button_pressed(DPAD_RIGHT) or gk.button_pressed(DPAD_UP):
             # x-y move in robot base coordinate system
             dy = pose_gain * (-1 if gk.button_pressed(DPAD_LEFT) else 1 if gk.button_pressed(DPAD_RIGHT) else 0)
@@ -183,8 +185,10 @@ if __name__ == '__main__':
                 dx = -dx
 
             dz = pose_gain * -gk.r_thumb_y()
-            target = robot.arm.state.tool_pose() + [dx, dy, dz, 0, 0, 0]
+            (x, y, z) = robot.arm.state.tool_pose()[:3] + [dx, dy, dz]
+            target = Tool.from_array([x, y, z, roll, pitch, yaw])
             move(target, force)
+            (x, y, z) = robot.arm.state.tool_pose()[:3]
         else:
             rx = gk.r_thumb_x()
             ry = gk.r_thumb_y()
@@ -196,7 +200,7 @@ if __name__ == '__main__':
 
             if np.any(np.array([rx, ry, lx, ly])!=0):
                 dz = pose_gain * ry
-                (x, y, z, roll, pitch, yaw) = robot.arm.state.tool_pose().to_xyzrpy()
+                (x, y, z, _, _, yaw) = robot.arm.state.tool_pose().to_xyzrpy()
                 d = math.sqrt(x*x + y*y)
                 a = math.atan2(y, x)
 
@@ -216,8 +220,10 @@ if __name__ == '__main__':
                 z = z + dz
                 target = Tool.from_xyzrpy([x, y, z, roll, pitch, yaw])
                 move(target, force)
+                (x, y, z, _, _, yaw) = robot.arm.state.tool_pose().to_xyzrpy()
             else:
-                robot.arm.stop(blocking=False)
+                # robot.arm.stop(blocking=False, acc=5)
+                (x, y, z, roll, pitch, yaw) = robot.arm.state.tool_pose().to_xyzrpy()
         
         if gk.left_trigger() > 0:
             robot.open(speed=gk.left_trigger(), timeout=0)
