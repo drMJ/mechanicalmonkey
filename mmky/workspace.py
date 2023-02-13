@@ -3,6 +3,8 @@ import numpy as np
 import random
 from roman import Robot, Tool, Joints, GraspMode
 
+def in_range(value, range):
+    return value >= range[0] and value <= range[1]
 
 class Workspace:
     def __init__(self, radius_range, angular_range, height_range, start_position=None, out_position=None, neutral_position=None):
@@ -52,13 +54,10 @@ class Workspace:
         angle = self.angular_range[0] + random.random() * (self.angular_range[1] - self.angular_range[0])
         return [-dist * math.cos(angle), dist * math.sin(angle)]
 
-    def in_range(value, range):
-        return value >= range[0] and value <= range[1]
-
-    def is_inside(self, arm_state):
-        return  in_range(arm.tool_pose()[Tool.Z], self.height_range) and
-                in_range(np.linalg.norm(arm.tool_pose()[:2]), self.radius_range) and
-                in_range(arm.joint_positions()[Joints.Base], self.angular_range)
+    def check_bounds(self, arm_state):
+        return  in_range(arm_state.tool_pose()[Tool.Z], self.height_range) and \
+                in_range(np.linalg.norm(arm_state.tool_pose()[:2]), self.radius_range) and \
+                in_range(arm_state.joint_positions()[Joints.BASE], self.angular_range)
 
 
 

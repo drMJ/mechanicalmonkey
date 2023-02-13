@@ -49,3 +49,9 @@ class SimScene(roman.SimScene):
 
     def close(self):
         self.disconnect()
+
+    def eval(self, obs):
+        if not self.workspace.check_bounds(obs["arm"]):
+            print("Arm reached workspace bounds.")
+            return 0, False, True
+        self.eval_state(obs)

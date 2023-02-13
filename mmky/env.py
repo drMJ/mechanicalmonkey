@@ -66,7 +66,7 @@ class RomanEnv(gym.Env):
         if action_info:
             info['action_info'] = action_info
         self._last_obs = self._observe(time.perf_counter() - self._last_obs["time"] )
-        rew, success, done = self.scene.eval_state(self._last_obs)
+        rew, success, done = self.scene.eval(self._last_obs)
         info['success'] = success
         done = done or self.step_count >= self.max_steps 
         info['done'] = done

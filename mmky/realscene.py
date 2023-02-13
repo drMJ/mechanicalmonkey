@@ -111,3 +111,9 @@ class RealScene:
             self.workspace.go_to_out(self.robot)
             self._world_state = self.detector.detect_keypoints(use_arm_coord=True)
         return self._world_state
+
+    def eval(self, obs):
+        if not self.workspace.check_bounds(obs["arm"]):
+            print("Arm reached workspace bounds.")
+            return 0, False, True
+        self.eval_state(obs)
